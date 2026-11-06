@@ -148,6 +148,20 @@ public sealed class FieldExtractor
         return fields.OrderBy(f => f.order).Select(f => f.meta).ToList();
     }
 
+    /// <summary>
+    /// The declaring class's full name without type arguments: a member of a
+    /// closed generic base (<c>Base&lt;int&gt;</c>) names the open definition
+    /// (<c>NS.Base`1</c>), which is what its source declares.
+    /// </summary>
+    internal static string? DeclaringTypeName(MemberInfo member)
+    {
+        var declaring = member.DeclaringType;
+        if (declaring == null) return null;
+        if (declaring.IsGenericType && !declaring.IsGenericTypeDefinition)
+            declaring = declaring.GetGenericTypeDefinition();
+        return declaring.FullName;
+    }
+
     private FieldMetadata? TryBuildFieldMeta(MemberInfo member)
     {
         CustomAttributeData? dfAttr = null;
@@ -208,6 +222,7 @@ public sealed class FieldExtractor
         {
             Name = member.Name,
             Tag = tag,
+            DeclaringType = DeclaringTypeName(member),
             Type = memberType.Name,
             FullType = memberType.FullName ?? memberType.Name,
             FieldKind = fieldKind,

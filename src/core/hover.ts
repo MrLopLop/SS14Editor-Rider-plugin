@@ -10,10 +10,11 @@
  *
  *   - a component name after `- type:` — its class and summary;
  *   - a `!type:` tag — the union member it picks, and that class's summary;
+ *   - a prototype's own `type:` value — its `[Prototype]` class and summary;
  *   - a field key — of a component, a `[DataDefinition]` (through any `!type:`
  *     on the way) or the prototype itself: its summary, type and default.
  *
- * Anything else — a value, a dictionary entry's key, a name the schema does not
+ * Anything else — another value, a dictionary entry's key, a name the schema does not
  * know — has no hover.
  */
 
@@ -25,12 +26,12 @@ import type { FieldMetadata, SchemaRoot } from './schema-contract';
 /** What the caret names, as the hover shows it. */
 export type HoverContent = ClassHover | FieldHover;
 
-/** A component name or a `!type:` tag — the C# class it names. */
+/** A component name, a `!type:` tag or a prototype's `type:` — the C# class it names. */
 export interface ClassHover {
   /** `[start, end)` of the name under the caret — the span the hover belongs to. */
   readonly origin: readonly [number, number];
-  readonly kind: 'component' | 'type';
-  /** As written: a component's registration name, a tag's member name. */
+  readonly kind: 'component' | 'type' | 'prototype';
+  /** As written: a component's registration name, a tag's member name, a prototype type. */
   readonly name: string;
   /** The class's full C# name. */
   readonly type: string;
@@ -62,7 +63,11 @@ export function hoverAt(text: string, offset: number, schema: SchemaRoot): Hover
   const named = classAt(file, ctx, offset, schema);
   if (named) {
     const documented =
-      named.kind === 'component' ? schema.components[named.name] : schema.dataDefinitions[named.className];
+      named.kind === 'component'
+        ? schema.components[named.name]
+        : named.kind === 'prototype'
+          ? schema.prototypes[named.name]
+          : schema.dataDefinitions[named.className];
     return {
       origin: named.origin,
       kind: named.kind,

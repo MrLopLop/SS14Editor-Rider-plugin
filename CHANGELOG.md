@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.1
+
+- Go to definition from field names to the C# field or property, including
+  inherited fields, and from a prototype's `type:` to its C# class.
+- Hover over a prototype's `type:` shows its C# class.
+- Go to definition finds `struct` and `record` types too.
+- The schema format changed (version 2): it is rebuilt automatically on the
+  first start.
+
 ## 1.0.0
 
 First release.

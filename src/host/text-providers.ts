@@ -5,6 +5,7 @@ import {
   completionsAt,
   classDefinitionAt,
   definitionAt,
+  fieldDefinitionAt,
   hoverAt,
   hoverMarkdown,
   opensSuggestOnNewLine,
@@ -226,9 +227,12 @@ export class PrototypeCompletionProvider implements vscode.CompletionItemProvide
  * a range. Engine prototypes resolve the same way, into
  * `RobustToolbox/Resources/EnginePrototypes/`.
  *
- * On a component name or a `!type:` tag it asks {@link classDefinitionAt} for the
- * class and the {@link ClassLocator} for its declarations instead — one link per part of a
- * partial class, so VS Code jumps straight to a single one and peeks several.
+ * On a component name, a `!type:` tag or a prototype's `type:` it asks
+ * {@link classDefinitionAt} for the class and the {@link ClassLocator} for its
+ * declarations instead — one link per part of a partial class, so VS Code jumps
+ * straight to a single one and peeks several. On a field key it asks
+ * {@link fieldDefinitionAt} for the member and its declaring class, and the
+ * locator for where that member is written (or, failing that, the class).
  */
 export class PrototypeDefinitionProvider implements vscode.DefinitionProvider {
   constructor(
@@ -255,12 +259,16 @@ export class PrototypeDefinitionProvider implements vscode.DefinitionProvider {
     }
 
     const named = classDefinitionAt(text, offset, schema);
-    if (!named) return undefined;
-    const locations = await this.getLocator().locate(named.className);
+    const field = named ? null : fieldDefinitionAt(text, offset, schema);
+    const asked = named ?? field;
+    if (!asked) return undefined;
+    const locations = field
+      ? await this.getLocator().locateMember(field.className, field.member)
+      : await this.getLocator().locate(asked.className);
     const links = await Promise.all(
       locations.map((location) => {
         const name: [number, number] = [location.offset, location.offset + location.name.length];
-        return this.linkTo(document, named.origin, location.filePath, name, name);
+        return this.linkTo(document, asked.origin, location.filePath, name, name);
       }),
     );
     const opened = links.filter((link) => link !== undefined);

@@ -72,7 +72,7 @@ export class ClassLocator {
    * declared in the fork's sources, or they cannot be listed.
    */
   async locate(fullName: string): Promise<ClassLocation[]> {
-    const { namespace, name, outermost } = splitClassName(fullName);
+    const { namespace, name, outermost } = splitClassName(fullName.replace(GENERIC_ARITY, ''));
     const files = await this.projectFiles();
     if (files.length === 0) return [];
 
@@ -82,6 +82,26 @@ export class ClassLocator {
 
     await this.scanAll(files);
     return this.matchesIn(files, name, namespace);
+  }
+
+  /**
+   * Where `member` (a field or property, by its C# name) is declared in the class
+   * `fullName` — one location per part of a partial class that declares it. When
+   * no part does (the member is generated, or the sources drifted from the
+   * build), the class's own declarations instead, so the link still lands near.
+   * Empty when the class itself is not found.
+   */
+  async locateMember(fullName: string, member: string): Promise<ClassLocation[]> {
+    const classes = await this.locate(fullName);
+    const members = await Promise.all(
+      classes.map(async (location): Promise<ClassLocation | null> => {
+        const text = await this.textOf(location.filePath);
+        const offset = text === undefined ? null : memberDeclarationIn(text, location.offset, member);
+        return offset === null ? null : { filePath: location.filePath, offset, name: member };
+      }),
+    );
+    const found = members.filter((location) => location !== null);
+    return found.length > 0 ? found : classes;
   }
 
   private async projectFiles(): Promise<readonly string[]> {
@@ -114,15 +134,20 @@ export class ClassLocator {
   private declarationsOf(path: string): Promise<readonly ClassDeclaration[]> {
     let found = this.declarations.get(path);
     if (!found) {
-      found = this.source
-        .readFile(path)
-        .catch(() => undefined)
-        .then((text) => (text === undefined ? [] : classDeclarationsIn(text)));
+      found = this.textOf(path).then((text) => (text === undefined ? [] : classDeclarationsIn(text)));
       this.declarations.set(path, found);
     }
     return found;
   }
+
+  /** A file's text, read afresh: only the declarations are kept, not whole files. */
+  private textOf(path: string): Promise<string | undefined> {
+    return this.source.readFile(path).catch(() => undefined);
+  }
 }
+
+/** A generic type's arity suffix in a CLR name, `` `1 `` — source declares `Name<T>`. */
+const GENERIC_ARITY = /`\d+/g;
 
 /** `A.B.Outer+Inner` -> namespace `A.B`, name `Inner`, outermost class `Outer`. */
 function splitClassName(fullName: string): { namespace: string | null; name: string; outermost: string } {
@@ -143,12 +168,16 @@ function isNamedAfter(path: string, name: string): boolean {
 }
 
 /**
- * `namespace X;`, `namespace X {`, `class Name`, or a lone brace — over text
- * whose comments and string literals are already blanked, so none of these can
- * match inside them. `record class` is covered by `class`; a `where T : class`
- * constraint followed by another `where` is not a declaration.
+ * `namespace X;`, `namespace X {`, a type declaration — `class Name`,
+ * `struct Name`, `record Name`, `record struct Name` (`record class` is
+ * covered by `class`) — or a lone brace, over text whose comments and string
+ * literals are already blanked, so none of these can match inside them. A
+ * `where T : class` / `struct` constraint followed by another `where` is not a
+ * declaration. A `[DataDefinition]` may be any of these, so any is a "class"
+ * to the locator.
  */
-const TOKEN = /\bnamespace\s+([A-Za-z_][\w.]*)\s*([;{])|\bclass\s+(?!where\b)([A-Za-z_]\w*)|[{}]/g;
+const TOKEN =
+  /\bnamespace\s+([A-Za-z_][\w.]*)\s*([;{])|\b(?:class|struct|record(?:\s+struct)?)\s+(?!where\b|class\b)([A-Za-z_]\w*)|[{}]/g;
 
 /**
  * The class declarations of one C# file, each with its enclosing namespace —
@@ -188,6 +217,39 @@ export function classDeclarationsIn(rawText: string): ClassDeclaration[] {
     }
   }
   return found;
+}
+
+/**
+ * Offset of the declaration of field or property `member` directly in the body
+ * of the class whose name sits at `classOffset` (as {@link classDeclarationsIn}
+ * reports it), or `null` when that body declares none. A declaration is the
+ * name right after its type (`int X`, `T? X`, `List<T> X`, `int[] X`,
+ * `(int, int) X`) and before `;`, `=` or `{` — so a method, a use of the name
+ * in an initializer or expression body, and a nested class's member of the
+ * same name are not it. Comments and string literals are skipped.
+ */
+export function memberDeclarationIn(rawText: string, classOffset: number, member: string): number | null {
+  const text = rawText.charCodeAt(0) === BOM ? rawText.slice(1) : rawText;
+  const code = blankCommentsAndStrings(text);
+
+  const open = code.indexOf('{', classOffset);
+  // `record Foo(int X);` — a body-less declaration has no members to find.
+  const semicolon = code.indexOf(';', classOffset);
+  if (open < 0 || (semicolon >= 0 && semicolon < open)) return null;
+
+  // A C# member name is an identifier: nothing in it needs escaping.
+  if (!/^\w+$/.test(member)) return null;
+  const token = new RegExp(String.raw`[{}]|(?<=(?:[\w\]?)]|(?<!=)>)\s+)${member}(?=\s*(?:[;={]|=>))`, 'g');
+  token.lastIndex = open + 1;
+
+  let depth = 1;
+  for (let match = token.exec(code); match; match = token.exec(code)) {
+    if (match[0] === '{') depth++;
+    else if (match[0] === '}') {
+      if (--depth === 0) return null;
+    } else if (depth === 1) return match.index;
+  }
+  return null;
 }
 
 /**

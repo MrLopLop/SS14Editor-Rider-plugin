@@ -71,11 +71,11 @@ export type {
 export { completionsAt, opensSuggestOnNewLine, reopensSuggestAfterDeletion } from './completion';
 export type { CompletionCandidate } from './completion';
 export type { ResourceEntry, ResourceTree } from './resource-paths';
-export { classDefinitionAt, definitionAt } from './definition';
-export type { ClassDefinition, DefinitionTarget } from './definition';
+export { classDefinitionAt, definitionAt, fieldDefinitionAt } from './definition';
+export type { ClassDefinition, DefinitionTarget, FieldDefinition } from './definition';
 export { hoverAt, hoverMarkdown, readableTypeName } from './hover';
 export type { ClassHover, FieldHover, HoverContent } from './hover';
-export { ClassLocator, classDeclarationsIn } from './class-location';
+export { ClassLocator, classDeclarationsIn, memberDeclarationIn } from './class-location';
 export type { ClassDeclaration, ClassLocation, CsSourceTree } from './class-location';
 
 export {

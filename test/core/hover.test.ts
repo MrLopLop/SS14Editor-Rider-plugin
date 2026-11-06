@@ -188,11 +188,32 @@ describe('hoverAt — `!type:` tags', () => {
   });
 });
 
+describe('hoverAt — the prototype type', () => {
+  it("names the prototype's class, with its summary", () => {
+    const schema: SchemaRoot = {
+      ...SCHEMA,
+      prototypes: { ...SCHEMA.prototypes, entity: { ...SCHEMA.prototypes.entity, summary: 'A spawnable entity.' } },
+    };
+    const start = DESTRUCTIBLE.indexOf('entity');
+    expect(hoverAt(DESTRUCTIBLE, start + 2, schema)).toEqual({
+      origin: [start, start + 'entity'.length],
+      kind: 'prototype',
+      name: 'entity',
+      type: 'Robust.Shared.Prototypes.EntityPrototype',
+      summary: 'A spawnable entity.',
+    });
+  });
+
+  it('renders as its class', () => {
+    const hover = hoverAt(DESTRUCTIBLE, at(DESTRUCTIBLE, 'entity'), SCHEMA)!;
+    expect(hoverMarkdown(hover)).toBe(['```csharp', '(prototype) Robust.Shared.Prototypes.EntityPrototype', '```'].join('\n'));
+  });
+});
+
 describe('hoverAt — outside a component or field', () => {
   it.each([
     ['a field value', 'Heat'],
     ['the prototype id', 'Crate'],
-    ['the prototype type', 'entity'],
     ['a prototype-id value', 'Metallic'],
   ])('is empty on %s', (_what, needle) => {
     expect(hoverAt(DESTRUCTIBLE, at(DESTRUCTIBLE, needle), SCHEMA)).toBeNull();

@@ -128,6 +128,24 @@ describe('classDeclarationsIn — class declarations of one C# file', () => {
       ['NestedComponent', 'Content.Shared.Foo'],
     ]);
   });
+
+  it('reports structs and records — a `[DataDefinition]` may be either — but not a `struct` constraint', () => {
+    const text = [
+      'namespace Content.Shared.Foo;',
+      'public partial struct Hand {}',
+      'public readonly record struct Entry(string Id);',
+      'public sealed partial record Config {}',
+      'public sealed class Box<T> where T : struct',
+      '    where T2 : class {}',
+    ].join('\n');
+
+    expect(classDeclarationsIn(text).map((d) => [d.name, text.slice(d.offset, d.offset + d.name.length)])).toEqual([
+      ['Hand', 'Hand'],
+      ['Entry', 'Entry'],
+      ['Config', 'Config'],
+      ['Box', 'Box'],
+    ]);
+  });
 });
 
 describe('ClassLocator — where a component class is declared in the fork', () => {
@@ -373,6 +391,5 @@ describe('classDefinitionAt — the component name under the caret', () => {
 
   it('has no target off the component name', () => {
     expect(classDefinitionAt(TEXT, TEXT.indexOf('icon'), SCHEMA)).toBeNull();
-    expect(classDefinitionAt(TEXT, TEXT.indexOf('entity'), SCHEMA)).toBeNull();
   });
 });

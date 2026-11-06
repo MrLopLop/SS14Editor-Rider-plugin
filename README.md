@@ -19,11 +19,13 @@ prototypes, built from any SS14 fork's code.
   `RobustToolbox` are included.
 - **Resource paths.** Completion of files and folders under `Resources/` in
   fields that take a resource path. New files show up right away.
-- **Hover.** Hover over a component name, a field or a `!type:` tag to see its
-  description from the C# docs, its type and its default value.
+- **Hover.** Hover over a component name, a field, a `!type:` tag or a
+  prototype's `type:` to see its description from the C# docs, its type and
+  its default value.
 - **Go to definition.** Ctrl+Click or F12 on a prototype id jumps to the
-  prototype's declaration; on a component name or a `!type:` tag it jumps to
-  the C# class.
+  prototype's declaration; on a component name, a `!type:` tag or a
+  prototype's `type:` it jumps to the C# class; on a field name it jumps to the
+  C# field or property, in the base class when the field is inherited.
 - **Stays current.** After you rebuild the fork, new components and fields
   appear without restarting VS Code. Saving a prototype file makes its ids
   available everywhere at once.
