@@ -1,12 +1,14 @@
 /**
- * Where a C# class is declared in the fork (spec #20, "Текстовые провайдеры";
- * issue #31) — the target of go-to-definition on a component name.
+ * Where a C# type, or a field or property of one, is declared in the fork (spec
+ * #20, "Текстовые провайдеры"; issue #31) — the target of go-to-definition on a
+ * component name, a `!type:` tag, a prototype's `type:` and a field key.
  *
- * The schema names each component's class (`ComponentMetadata.className`) but
- * not its source file: the extractor reads compiled DLLs, and their PDBs carry
- * sequence points for method bodies only — a type's own declaration line is not
- * in them, and a component with no methods has no entry at all. So the
- * declaration is looked up in source instead: `class <Name>` over the fork's
+ * The schema names each class (`ComponentMetadata.className`, a field's
+ * `declaringType`, …) but not its source file: the extractor reads compiled
+ * DLLs, and their PDBs carry sequence points for method bodies only — a type's
+ * own declaration line is not in them, and a component with no methods has no
+ * entry at all. So the declaration is looked up in source instead — `class`,
+ * `struct` or `record <Name>`, then a member in its body — over the fork's
  * git-tracked `.cs` files in the `Content.*` projects and the engine's
  * `RobustToolbox/Robust.*` (a submodule, listed with `--recurse-submodules`).
  *
@@ -172,12 +174,20 @@ function isNamedAfter(path: string, name: string): boolean {
  * `struct Name`, `record Name`, `record struct Name` (`record class` is
  * covered by `class`) — or a lone brace, over text whose comments and string
  * literals are already blanked, so none of these can match inside them. A
- * `where T : class` / `struct` constraint followed by another `where` is not a
- * declaration. A `[DataDefinition]` may be any of these, so any is a "class"
- * to the locator.
+ * `where T : class` / `struct` constraint followed by another `where`, and a
+ * variable named `record` (`foreach (var record in …)`), are not declarations.
+ * A `[DataDefinition]` may be any of these, so any is a "class" to the locator.
  */
 const TOKEN =
-  /\bnamespace\s+([A-Za-z_][\w.]*)\s*([;{])|\b(?:class|struct|record(?:\s+struct)?)\s+(?!where\b|class\b)([A-Za-z_]\w*)|[{}]/g;
+  /\bnamespace\s+([A-Za-z_][\w.]*)\s*([;{])|\b(?:class|struct|record(?:\s+struct)?)\s+(?!where\b|class\b|in\b)([A-Za-z_]\w*)|[{}]/g;
+
+/**
+ * A file's code as the scanners read it: BOM stripped — offsets are into the
+ * BOM-stripped text — and comments and literals blanked.
+ */
+function scrubbed(rawText: string): string {
+  return blankCommentsAndStrings(rawText.charCodeAt(0) === BOM ? rawText.slice(1) : rawText);
+}
 
 /**
  * The class declarations of one C# file, each with its enclosing namespace —
@@ -185,8 +195,7 @@ const TOKEN =
  * char literal is not a declaration.
  */
 export function classDeclarationsIn(rawText: string): ClassDeclaration[] {
-  const text = rawText.charCodeAt(0) === BOM ? rawText.slice(1) : rawText;
-  const code = blankCommentsAndStrings(text);
+  const code = scrubbed(rawText);
 
   const found: ClassDeclaration[] = [];
   let fileScoped: string | null = null;
@@ -222,34 +231,68 @@ export function classDeclarationsIn(rawText: string): ClassDeclaration[] {
 /**
  * Offset of the declaration of field or property `member` directly in the body
  * of the class whose name sits at `classOffset` (as {@link classDeclarationsIn}
- * reports it), or `null` when that body declares none. A declaration is the
- * name right after its type (`int X`, `T? X`, `List<T> X`, `int[] X`,
- * `(int, int) X`) and before `;`, `=` or `{` — so a method, a use of the name
- * in an initializer or expression body, and a nested class's member of the
- * same name are not it. Comments and string literals are skipped.
+ * reports it), or `null` when that body declares none.
+ *
+ * The body is read member by member — the text between `;`, `{` and `}` at the
+ * body's own depth, so a nested class or a property body is never mistaken for
+ * it. In one member, the name declares it when it is followed by `;`, `=`, `{`,
+ * `=>` or `,` and nothing before it is an initializer or an open parameter
+ * list: `int X;`, `T? X { get; }`, `List<T> X = new();`, `(int, int) X;`,
+ * `int A, X;`, `int IFoo.X { get; }` and `@event` are declarations, while
+ * `float B = (float) X;`, `int Y => _a ?? X;` and `void F(int X = 1)` are not.
+ * Attributes are read past. Comments and string literals are skipped.
  */
 export function memberDeclarationIn(rawText: string, classOffset: number, member: string): number | null {
-  const text = rawText.charCodeAt(0) === BOM ? rawText.slice(1) : rawText;
-  const code = blankCommentsAndStrings(text);
+  // A C# member name is an identifier: nothing in it needs escaping.
+  if (!/^\w+$/.test(member)) return null;
+  const code = scrubbed(rawText);
 
   const open = code.indexOf('{', classOffset);
   // `record Foo(int X);` — a body-less declaration has no members to find.
   const semicolon = code.indexOf(';', classOffset);
   if (open < 0 || (semicolon >= 0 && semicolon < open)) return null;
 
-  // A C# member name is an identifier: nothing in it needs escaping.
-  if (!/^\w+$/.test(member)) return null;
-  const token = new RegExp(String.raw`[{}]|(?<=(?:[\w\]?)]|(?<!=)>)\s+)${member}(?=\s*(?:[;={]|=>))`, 'g');
+  const token = new RegExp(String.raw`[{};]|@?\b${member}\b(?=\s*(?:[;={,]|=>))`, 'g');
   token.lastIndex = open + 1;
 
   let depth = 1;
+  let memberStart = open + 1;
   for (let match = token.exec(code); match; match = token.exec(code)) {
-    if (match[0] === '{') depth++;
-    else if (match[0] === '}') {
+    const [found] = match;
+    if (found === '{') {
+      depth++;
+    } else if (found === '}') {
       if (--depth === 0) return null;
-    } else if (depth === 1) return match.index;
+      if (depth === 1) memberStart = match.index + 1;
+    } else if (found === ';') {
+      if (depth === 1) memberStart = match.index + 1;
+    } else if (depth === 1 && isDeclaratorHead(code.slice(memberStart, match.index))) {
+      return found.startsWith('@') ? match.index + 1 : match.index;
+    }
   }
   return null;
+}
+
+/**
+ * Whether `head` — one member's text up to a candidate name — leaves that name
+ * in declarator position: right after a type and whitespace, an earlier
+ * declarator's `,`, or an interface's `IFoo.`; with no `=` and no unclosed `(`
+ * on the way.
+ */
+function isDeclaratorHead(head: string): boolean {
+  // Attribute lists and array ranks hold `=` and `(` of their own.
+  const bare = head.replace(/\[[^\]]*\]/g, ' ').trimEnd();
+  if (bare.includes('=')) return false;
+  if (count(bare, '(') !== count(bare, ')')) return false;
+
+  const last = bare.at(-1);
+  if (last === '.' || last === ',') return true;
+  // `int X`, `T? X`, `List<T> X`, `(int, int) X`.
+  return last !== undefined && /[\w?)>]/.test(last) && /\s$/.test(head);
+}
+
+function count(text: string, char: string): number {
+  return text.split(char).length - 1;
 }
 
 /**

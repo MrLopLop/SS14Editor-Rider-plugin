@@ -71,6 +71,14 @@ namespace Content.Editor.Tests
                 "Content.Editor.Tests.DeclaringTypeFixtures.Outer+Inner",
                 Field("Content.Editor.Tests.DeclaringTypeFixtures.Outer+Inner", "Depth").DeclaringType);
         }
+
+        [Fact]
+        public void NamesAClassNestedInAGenericOneByItsOpenDefinition()
+        {
+            Assert.Equal(
+                "Content.Editor.Tests.DeclaringTypeFixtures.GenericOuter`1+Inner",
+                Field("Content.Editor.Tests.DeclaringTypeFixtures.GenericOuter`1+Inner", "Depth").DeclaringType);
+        }
     }
 }
 
@@ -87,6 +95,14 @@ namespace Content.Editor.Tests.DeclaringTypeFixtures
     }
 
     internal static class Outer
+    {
+        internal sealed class Inner
+        {
+            [DataField] public int Depth;
+        }
+    }
+
+    internal abstract class GenericOuter<T>
     {
         internal sealed class Inner
         {

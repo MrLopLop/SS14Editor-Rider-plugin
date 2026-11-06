@@ -1,16 +1,24 @@
 /**
- * Go-to-definition for prototype ids (spec #20, "Текстовые провайдеры";
- * issue #33). Pure core: text + offset + schema snapshot + prototype index in,
- * the declaration to jump to as data out. The host adapter
- * ({@link file://../host/text-providers.ts}) turns it into a `LocationLink`;
- * VS Code then serves it on both Ctrl+Click and F12.
+ * Go-to-definition (spec #20, "Текстовые провайдеры"). Pure core: text +
+ * offset + schema snapshot (+ prototype index) in, what to jump to as data out.
+ * The host adapter ({@link file://../host/text-providers.ts}) turns it into
+ * `LocationLink`s; VS Code then serves them on both Ctrl+Click and F12. Three
+ * questions, asked in this order:
  *
- * The caret must sit on the value of a field that names a prototype — the same
- * question autocomplete asks ({@link protoRefKindAt}): `parent:` (scalar, block
- * list or flow list), `ProtoId<T>`, `EntProtoId`, and lists of them — or on a
- * key of a dictionary keyed by one (`damage.types: { Blunt: 5 }`). The id is
- * looked up under that field's kind only, so an entity id written in a reagent
- * field has no target.
+ *   - {@link definitionAt} — a prototype id (issue #33) to its YAML
+ *     declaration. The caret must sit on the value of a field that names a
+ *     prototype — the same question autocomplete asks ({@link protoRefKindAt}):
+ *     `parent:` (scalar, block list or flow list), `ProtoId<T>`, `EntProtoId`,
+ *     and lists of them — or on a key of a dictionary keyed by one
+ *     (`damage.types: { Blunt: 5 }`). The id is looked up under that field's
+ *     kind only, so an entity id written in a reagent field has no target.
+ *   - {@link classDefinitionAt} — a component name, a `!type:` tag or a
+ *     prototype's own `type:` (issue #31) to the C# class it names.
+ *   - {@link fieldDefinitionAt} — a field key to the C# member behind it, in
+ *     the class that declares it.
+ *
+ * Where a C# class or member is written is the `ClassLocator`'s question
+ * (./class-location.ts), asked by the host.
  */
 
 import { contextAt, fieldAt, protoRefKindAt, typeTagMemberAt } from './completion';
@@ -62,6 +70,8 @@ export interface ClassDefinition {
   readonly kind: 'component' | 'type' | 'prototype';
   /** The name as written — a component's registration name, a tag's member name, a prototype type. */
   readonly name: string;
+  /** The class's XML-doc summary as the schema carries it — for hover. */
+  readonly summary?: string;
 }
 
 /**
@@ -94,23 +104,38 @@ export function classAt(
     if (!member || token.text === null) return null;
     // The name ends the tag: `!type:<name>`.
     const end = token.range[1];
-    return { origin: [end - token.text.length, end], className: member, kind: 'type', name: token.text };
+    return {
+      origin: [end - token.text.length, end],
+      className: member,
+      kind: 'type',
+      name: token.text,
+      summary: own(schema.dataDefinitions, member)?.summary,
+    };
   }
 
   if (isPrototypeTypeValue(ctx)) {
     const origin = idSpanAt(file.text, offset);
     const type = ctx.prototypeType;
     if (!origin || type === null || file.text.slice(origin[0], origin[1]) !== type) return null;
-    const prototype = Object.hasOwn(schema.prototypes, type) ? schema.prototypes[type] : undefined;
-    return prototype ? { origin, className: prototype.className, kind: 'prototype', name: type } : null;
+    const prototype = own(schema.prototypes, type);
+    return prototype
+      ? { origin, className: prototype.className, kind: 'prototype', name: type, summary: prototype.summary }
+      : null;
   }
 
   if (token.kind !== 'component-type' || token.text === null) return null;
-  const component = Object.hasOwn(schema.components, token.text) ? schema.components[token.text] : undefined;
+  const component = own(schema.components, token.text);
   if (!component) return null;
 
   const origin = idSpanAt(file.text, offset);
-  return origin ? { origin, className: component.className, kind: 'component', name: token.text } : null;
+  return origin
+    ? { origin, className: component.className, kind: 'component', name: token.text, summary: component.summary }
+    : null;
+}
+
+/** `record[key]` when `key` is the record's own — a name like `constructor` is not a schema entry. */
+function own<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
 /** On the value of a prototype map's own `type:` — outside every component. */

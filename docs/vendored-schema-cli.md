@@ -21,10 +21,11 @@ single record of origin.
 | `schema-cli/vendor/XmlDocReader.cs`       | `src/Metadata/XmlDocReader.cs`       | verbatim |
 | `schema-cli/vendor/MetadataModels.cs`     | `src/Metadata/MetadataModels.cs`     | verbatim + `FieldMetadata.DeclaringType` (see below) — the `MetadataRoot` contract |
 | `schema-cli/vendor/Logger.cs`             | `src/Core/Logger.cs`                 | verbatim — the only support dependency of the extractors |
-| `schema-cli/tests/*.cs`, `schema-cli/tests/Fixtures/*.cs` | `tests/ss14-editor.Tests/{MetadataExtractor,FieldExtractor,CtorDefaultsScanner,XmlDocReader}Tests.cs`, `TempDir.cs`, `Fixtures/{FixtureTypes,RuntimeHandleStubs}.cs` | verbatim |
+| `schema-cli/tests/*.cs`, `schema-cli/tests/Fixtures/*.cs` | `tests/ss14-editor.Tests/{MetadataExtractor,FieldExtractor,CtorDefaultsScanner,XmlDocReader}Tests.cs`, `TempDir.cs`, `Fixtures/{FixtureTypes,RuntimeHandleStubs}.cs` | verbatim (except `DeclaringTypeTests.cs`, which is this repo's own) |
 
-The vendored `.cs` files are unmodified byte-for-byte, except for the one
-addition listed under "Local changes" below. Only the project files
+The vendored `.cs` files are unmodified byte-for-byte, except for the change
+listed under "Local changes" below (it touches `FieldExtractor.cs` and
+`MetadataModels.cs`). Only the project files
 (`.csproj`), the `InternalsVisibleTo` shim and the entry point
 (`schema-cli/Program.cs`) are new. The spec envisaged a ~30-line entry point;
 the actual ~110 lines are that core plus the spec-required `sourceFingerprint`
@@ -58,7 +59,8 @@ Their tests (`ApiRouterTests`, `ProtoIndexServiceTests`,
 
 ## Contract addition
 
-The predecessor's `MetadataRoot` is used **as-is**. `Program.cs` wraps the
+The predecessor's `MetadataRoot` is used as-is, apart from the one field added
+under "Local changes" (`FieldMetadata.DeclaringType`). `Program.cs` wraps the
 extractor's output with two extra root fields before writing it:
 
 - `schemaVersion` (int) — bumped when the emitted document's shape changes,

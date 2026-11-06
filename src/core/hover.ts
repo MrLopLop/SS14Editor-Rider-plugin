@@ -62,18 +62,12 @@ export function hoverAt(text: string, offset: number, schema: SchemaRoot): Hover
   const ctx = contextAt(file, offset, schema);
   const named = classAt(file, ctx, offset, schema);
   if (named) {
-    const documented =
-      named.kind === 'component'
-        ? schema.components[named.name]
-        : named.kind === 'prototype'
-          ? schema.prototypes[named.name]
-          : schema.dataDefinitions[named.className];
     return {
       origin: named.origin,
       kind: named.kind,
       name: named.name,
       type: named.className,
-      summary: summaryOf(documented),
+      summary: summaryOf(named),
     };
   }
 

@@ -129,14 +129,16 @@ describe('classDeclarationsIn — class declarations of one C# file', () => {
     ]);
   });
 
-  it('reports structs and records — a `[DataDefinition]` may be either — but not a `struct` constraint', () => {
+  it('reports structs and records — a `[DataDefinition]` may be either — but not a `struct` constraint or a `record` variable', () => {
     const text = [
       'namespace Content.Shared.Foo;',
       'public partial struct Hand {}',
       'public readonly record struct Entry(string Id);',
       'public sealed partial record Config {}',
       'public sealed class Box<T> where T : struct',
-      '    where T2 : class {}',
+      '    where T2 : class {',
+      '    void F() { foreach (var record in Records) {} }',
+      '}',
     ].join('\n');
 
     expect(classDeclarationsIn(text).map((d) => [d.name, text.slice(d.offset, d.offset + d.name.length)])).toEqual([

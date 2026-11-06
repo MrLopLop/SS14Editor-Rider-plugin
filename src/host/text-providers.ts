@@ -354,7 +354,12 @@ export class PrototypeHoverProvider implements vscode.HoverProvider {
       const markdown = locHoverMarkdown(locId.key, translations, (record) =>
         fileUriOf(this.forkRoot, record).with({ fragment: `L${record.line + 1}` }).toString(),
       );
-      return new vscode.Hover(new vscode.MarkdownString(markdown), rangeOf(document, locId.range));
+      // VS Code anchors the hover at its range's start. A folded key's own text
+      // is hidden (display: none) and has no on-screen position, so the hover
+      // would drift to the line's end; start one character earlier instead — the
+      // always-visible space, quote or bracket right before the key.
+      const anchor: [number, number] = [Math.max(0, locId.range[0] - 1), locId.range[1]];
+      return new vscode.Hover(new vscode.MarkdownString(markdown), rangeOf(document, anchor));
     }
 
     const hover = hoverAt(text, offset, schema);

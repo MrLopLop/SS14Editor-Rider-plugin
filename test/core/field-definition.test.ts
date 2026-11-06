@@ -81,6 +81,35 @@ describe('memberDeclarationIn — a data-field member in one class body', () => 
     expect(memberDeclarationIn(TEXT, CLASS, 'Depth')).toBe(declared('[DataField] public int Depth;', 'Depth'));
   });
 
+  it.each([
+    ['a cast in an earlier initializer', '[DataField] public float B = (float) X;'],
+    ['a `??` in an expression body', 'public int Y => _a ?? X;'],
+    ['a defaulted method parameter', 'public void F(int X = 1) {}'],
+    ['an attribute argument', '[Access(Other = X)] public int Z;'],
+  ])('reads past the name used in %s, to its declaration', (_what, use) => {
+    const text = ['public sealed class Foo', '{', `    ${use}`, '    [DataField] public int X;', '}'].join('\n');
+
+    expect(memberDeclarationIn(text, text.indexOf('Foo'), 'X')).toBe(text.lastIndexOf('X;'));
+  });
+
+  it.each([
+    ['a second declarator', 'public int A, X;', 'X;'],
+    ['a second declarator without a space', 'public int A,X;', 'X;'],
+    ['an explicit interface member', 'int IFoo.X { get; set; }', 'X {'],
+    ['an escaped identifier', 'public string @X = "";', 'X ='],
+    ['an attribute on its own line', '[DataField(required: true)]\n    public int X;', 'X;'],
+  ])('finds %s', (_what, declaration, at) => {
+    const text = ['public sealed class Foo', '{', `    ${declaration}`, '}'].join('\n');
+
+    expect(memberDeclarationIn(text, text.indexOf('Foo'), 'X')).toBe(text.indexOf(at));
+  });
+
+  it('is null for a positional record parameter, which sits before the body', () => {
+    const text = 'public sealed record Foo(int X)\n{\n    public int Y;\n}';
+
+    expect(memberDeclarationIn(text, text.indexOf('Foo'), 'X')).toBeNull();
+  });
+
   it('does not take a method for a member', () => {
     expect(memberDeclarationIn(TEXT, CLASS, 'Scaled')).toBeNull();
   });
@@ -129,6 +158,24 @@ describe('ClassLocator.locateMember — the member across the parts of its class
     expect(found).toEqual([{ filePath: GENERIC, offset: GENERIC_TEXT.indexOf('Target'), name: 'Target' }]);
   });
 
+  it('finds the member of a class nested in a generic one', async () => {
+    const path = 'Content.Shared/Baz/Outer.cs';
+    const text = [
+      'namespace Content.Shared.Baz;',
+      'public abstract class Outer<T>',
+      '{',
+      '    public sealed class Inner',
+      '    {',
+      '        [DataField] public int Depth;',
+      '    }',
+      '}',
+    ].join('\n');
+
+    const found = await new ClassLocator(tree({ [path]: text })).locateMember('Content.Shared.Baz.Outer`1+Inner', 'Depth');
+
+    expect(found).toEqual([{ filePath: path, offset: text.indexOf('Depth'), name: 'Depth' }]);
+  });
+
   it('falls back to every part of the class when no part declares the member', async () => {
     const found = await new ClassLocator(tree(FILES)).locateMember('Content.Shared.Foo.FooComponent', 'Gone');
 
@@ -152,6 +199,7 @@ describe('classDefinitionAt — the prototype type under the caret', () => {
       className: 'Robust.Shared.Prototypes.EntityPrototype',
       kind: 'prototype',
       name: 'entity',
+      summary: SCHEMA.prototypes.entity.summary,
     });
   });
 
