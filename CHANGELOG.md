@@ -8,6 +8,12 @@
 - Go to definition finds `struct` and `record` types too.
 - The schema format changed (version 2): it is rebuilt automatically on the
   first start.
+- LocId fields show their translation instead of the key, the way Android
+  Studio folds string resources; put the caret on one to see the key. The
+  locale is set by `ss14editor.localization.displayLocale` (default `en-US`);
+  **SS14: Toggle LocId folding** turns it off and on.
+- Go to definition on a LocId jumps to its `.ftl` declaration, or lists one
+  per locale; hover shows the text in every locale.
 
 ## 1.0.0
 

@@ -26,6 +26,10 @@ prototypes, built from any SS14 fork's code.
   prototype's declaration; on a component name, a `!type:` tag or a
   prototype's `type:` it jumps to the C# class; on a field name it jumps to the
   C# field or property, in the base class when the field is inherited.
+- **Localization.** A LocId key in a prototype shows as its translation, the
+  way Android Studio folds string resources; put the caret on it to see and
+  edit the key. Hover lists the text in every locale, and Ctrl+Click jumps to
+  the `.ftl` declaration, or lists one per locale.
 - **Stays current.** After you rebuild the fork, new components and fields
   appear without restarting VS Code. Saving a prototype file makes its ids
   available everywhere at once.
@@ -40,7 +44,9 @@ fork folder.
    `Content.Server` and `Resources`).
 3. Open any prototype file under `Resources/Prototypes/` and start typing.
 
-There is nothing to configure. The first start on a fork takes a little while;
+There is nothing to configure. To fold LocId keys into another locale, set
+`ss14editor.localization.displayLocale` (for example to `ru-RU`); a key it
+lacks shows in `en-US`. The first start on a fork takes a little while;
 later starts are fast.
 
 If suggestions don't appear, open **View → Output** and pick **SS14 Editor**
@@ -50,3 +56,5 @@ start things over:
 
 - **SS14: Rebuild schema** re-reads components and fields from the built fork.
 - **SS14: Rebuild prototype index** re-reads all prototype files.
+- **SS14: Toggle LocId folding** shows LocId keys as written, or as their
+  translation again.

@@ -81,6 +81,7 @@ export type { ClassDeclaration, ClassLocation, CsSourceTree } from './class-loca
 export {
   parsePrototypeFile,
   positionAt,
+  valueScalarsOf,
   resolveField,
   cursorContextAt,
   replaceScalarValue,
@@ -102,7 +103,21 @@ export type {
   CursorContext,
   CursorContextOptions,
   CursorToken,
+  ScalarSpan,
   RegistrySite,
   SurgicalEdit,
   EditOutcome,
 } from './prototype-yaml';
+
+export { parseFluent, flattenPattern } from './fluent';
+export type { FluentEntry, FluentResolver } from './fluent';
+export {
+  LOCALE_ROOTS,
+  FALLBACK_LOCALE,
+  LocalizationIndex,
+  localeOf,
+  collectLocRecords,
+} from './localization-index';
+export type { LocRecord, LocTranslation, LocalizationIndexView } from './localization-index';
+export { locIdAt, locIdSpansIn, locHoverMarkdown, foldedText, MAX_PREVIEW_LENGTH } from './loc-id';
+export type { LocIdSpan } from './loc-id';

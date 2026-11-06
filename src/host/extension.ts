@@ -2,6 +2,9 @@ import * as vscode from 'vscode';
 
 import { QUALIFIED_EXTENSION_ID } from '../core';
 import { ForkStatusController } from './fork-status-controller';
+import { LocIdFoldingController } from './loc-id-folding';
+import { LocalizationIndexController } from './localization-index-controller';
+import { TOGGLE_LOC_ID_FOLDING_COMMAND, toggleLocIdFolding } from './localization-settings';
 import { PrototypeIndexController } from './prototype-index-controller';
 import { SchemaController } from './schema-controller';
 import { TextProviderController } from './text-providers';
@@ -20,16 +23,26 @@ export function activate(context: vscode.ExtensionContext): void {
   const forkStatus = new ForkStatusController(log);
   const schema = new SchemaController(context, forkStatus, log);
   const prototypeIndex = new PrototypeIndexController(context, forkStatus, log);
-  const textProviders = new TextProviderController(forkStatus, schema, prototypeIndex.index);
+  const localizationIndex = new LocalizationIndexController(forkStatus, log);
+  const textProviders = new TextProviderController(forkStatus, schema, prototypeIndex.index, localizationIndex.index);
+  const locIdFolding = new LocIdFoldingController(
+    forkStatus,
+    schema,
+    localizationIndex.index,
+    localizationIndex.onDidUpdate,
+  );
 
   context.subscriptions.push(
     log,
     forkStatus,
     schema,
     prototypeIndex,
+    localizationIndex,
     textProviders,
+    locIdFolding,
     vscode.commands.registerCommand(REBUILD_SCHEMA_COMMAND, () => schema.rebuild()),
     vscode.commands.registerCommand(REBUILD_PROTOTYPE_INDEX_COMMAND, () => prototypeIndex.rebuild()),
+    vscode.commands.registerCommand(TOGGLE_LOC_ID_FOLDING_COMMAND, () => toggleLocIdFolding()),
   );
 
   console.log(`SS14 Prototype Editor v${version} activated.`);

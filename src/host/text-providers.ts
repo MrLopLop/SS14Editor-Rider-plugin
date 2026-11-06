@@ -8,15 +8,20 @@ import {
   fieldDefinitionAt,
   hoverAt,
   hoverMarkdown,
+  locHoverMarkdown,
+  locIdAt,
   opensSuggestOnNewLine,
   reopensSuggestAfterDeletion,
   type CompletionCandidate,
+  type LocalizationIndexView,
+  type LocRecord,
   type PrototypeIndexView,
   type ResourceTree,
   type SchemaRoot,
 } from '../core';
 import { createCsSourceTree, createResourceTree } from './fork-fs';
 import type { ForkStatusController } from './fork-status-controller';
+import { displayLocale } from './localization-settings';
 import type { SchemaController } from './schema-controller';
 
 /**
@@ -55,6 +60,7 @@ export class TextProviderController implements vscode.Disposable {
     private readonly forkStatus: ForkStatusController,
     private readonly schema: SchemaController,
     private readonly prototypeIndex: PrototypeIndexView,
+    private readonly localizationIndex: LocalizationIndexView,
   ) {
     this.disposables.push(
       this.schema.onDidChange(() => {
@@ -95,9 +101,12 @@ export class TextProviderController implements vscode.Disposable {
       ),
       vscode.languages.registerDefinitionProvider(
         selector,
-        new PrototypeDefinitionProvider(getSchema, this.prototypeIndex, getLocator, root.uri),
+        new PrototypeDefinitionProvider(getSchema, this.prototypeIndex, this.localizationIndex, getLocator, root.uri),
       ),
-      vscode.languages.registerHoverProvider(selector, new PrototypeHoverProvider(getSchema)),
+      vscode.languages.registerHoverProvider(
+        selector,
+        new PrototypeHoverProvider(getSchema, this.localizationIndex, root.uri),
+      ),
       triggerSuggestOnEdit(selector, getSchema, this.prototypeIndex, resources),
       vscode.commands.registerCommand(SUGGEST_IF_ANY_COMMAND, () => {
         const editor = vscode.window.activeTextEditor;
@@ -238,6 +247,7 @@ export class PrototypeDefinitionProvider implements vscode.DefinitionProvider {
   constructor(
     private readonly getSchema: () => SchemaRoot | null,
     private readonly index: PrototypeIndexView,
+    private readonly localizationIndex: LocalizationIndexView,
     private readonly getLocator: () => ClassLocator,
     private readonly forkRoot: vscode.Uri,
   ) {}
@@ -251,6 +261,18 @@ export class PrototypeDefinitionProvider implements vscode.DefinitionProvider {
 
     const text = document.getText();
     const offset = document.offsetAt(position);
+
+    // A LocId jumps to its `.ftl` declarations — one per locale, so VS Code
+    // jumps straight to a single one and peeks several.
+    const locId = this.localizationIndex.ready ? locIdAt(text, offset, schema) : null;
+    if (locId) {
+      const origin = rangeOf(document, locId.range);
+      const links = this.localizationIndex
+        .declarations(locId.key, displayLocale())
+        .map((record) => locLink(this.forkRoot, origin, record));
+      return links.length > 0 ? links : undefined;
+    }
+
     const found = definitionAt(text, offset, schema, this.index);
     if (found) {
       const [start, , end] = found.target.range;
@@ -313,13 +335,29 @@ export class PrototypeDefinitionProvider implements vscode.DefinitionProvider {
  * over the name it was asked from.
  */
 export class PrototypeHoverProvider implements vscode.HoverProvider {
-  constructor(private readonly getSchema: () => SchemaRoot | null) {}
+  constructor(
+    private readonly getSchema: () => SchemaRoot | null,
+    private readonly localizationIndex: LocalizationIndexView,
+    private readonly forkRoot: vscode.Uri,
+  ) {}
 
   provideHover(document: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
     const schema = this.getSchema();
     if (!schema) return undefined;
 
-    const hover = hoverAt(document.getText(), document.offsetAt(position), schema);
+    const text = document.getText();
+    const offset = document.offsetAt(position);
+    // A LocId: its text in every locale, each linked to its declaration.
+    const locId = this.localizationIndex.ready ? locIdAt(text, offset, schema) : null;
+    if (locId) {
+      const translations = this.localizationIndex.translations(locId.key, displayLocale());
+      const markdown = locHoverMarkdown(locId.key, translations, (record) =>
+        fileUriOf(this.forkRoot, record).with({ fragment: `L${record.line + 1}` }).toString(),
+      );
+      return new vscode.Hover(new vscode.MarkdownString(markdown), rangeOf(document, locId.range));
+    }
+
+    const hover = hoverAt(text, offset, schema);
     if (!hover) return undefined;
     const [start, end] = hover.origin;
     return new vscode.Hover(
@@ -327,6 +365,25 @@ export class PrototypeHoverProvider implements vscode.HoverProvider {
       new vscode.Range(document.positionAt(start), document.positionAt(end)),
     );
   }
+}
+
+/** `[start, end)` offsets of `document` as a range. */
+function rangeOf(document: vscode.TextDocument, [start, end]: readonly [number, number]): vscode.Range {
+  return new vscode.Range(document.positionAt(start), document.positionAt(end));
+}
+
+/** The `.ftl` file a localization record is declared in. */
+function fileUriOf(forkRoot: vscode.Uri, record: LocRecord): vscode.Uri {
+  return vscode.Uri.joinPath(forkRoot, ...record.filePath.split('/'));
+}
+
+/**
+ * A link to a key's declaration. Ids start their line, so the target is read
+ * off the record without opening the file.
+ */
+function locLink(forkRoot: vscode.Uri, origin: vscode.Range, record: LocRecord): vscode.LocationLink {
+  const id = new vscode.Range(record.line, 0, record.line, record.id.length);
+  return { originSelectionRange: origin, targetUri: fileUriOf(forkRoot, record), targetRange: id, targetSelectionRange: id };
 }
 
 const KIND: Record<CompletionCandidate['kind'], vscode.CompletionItemKind> = {

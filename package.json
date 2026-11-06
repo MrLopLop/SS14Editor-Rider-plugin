@@ -43,8 +43,28 @@
         "command": "ss14editor.rebuildPrototypeIndex",
         "title": "Rebuild prototype index",
         "category": "SS14"
+      },
+      {
+        "command": "ss14editor.toggleLocIdFolding",
+        "title": "Toggle LocId folding",
+        "category": "SS14"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "SS14 Prototype Editor",
+      "properties": {
+        "ss14editor.localization.displayLocale": {
+          "type": "string",
+          "default": "en-US",
+          "markdownDescription": "Locale LocId keys fold into, and are listed first in on hover and go to definition: a folder name under `Resources/Locale/` (`en-US`, `ru-RU`, …). A key this locale lacks falls back to `en-US`."
+        },
+        "ss14editor.localization.foldKeys": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show LocId keys in prototypes as their translation, the way Android Studio folds string resources. Putting the caret on a key shows it as written."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run build",

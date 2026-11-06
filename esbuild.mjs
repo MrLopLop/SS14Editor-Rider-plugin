@@ -8,6 +8,7 @@ const watch = process.argv.includes('--watch');
  * Bundles (issue #21):
  *   - host    : the thin VS Code adapter + pure core, CommonJS for the Extension Host
  *   - worker  : the prototype-index worker thread (issue #28), CommonJS, no `vscode`
+ *   - locale  : the localization-index worker thread, CommonJS, no `vscode`
  *
  * Plus one build-tooling bundle:
  *   - smoke   : the `@vscode/test-electron` activation test, compiled so the test CLI can run it
@@ -51,7 +52,15 @@ const smokeConfig = {
   logLevel: 'info',
 };
 
-const configs = [hostConfig, indexWorkerConfig, smokeConfig];
+/** The localization-index worker thread: loaded with `new Worker(dist/localization-index-worker.js)`. */
+/** @type {import('esbuild').BuildOptions} */
+const localeWorkerConfig = {
+  ...indexWorkerConfig,
+  entryPoints: ['src/host/localization-index-worker.ts'],
+  outfile: 'dist/localization-index-worker.js',
+};
+
+const configs = [hostConfig, indexWorkerConfig, localeWorkerConfig, smokeConfig];
 
 if (watch) {
   const contexts = await Promise.all(configs.map((c) => esbuild.context(c)));

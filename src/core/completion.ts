@@ -728,6 +728,22 @@ export function protoRefKindAt(ctx: CursorContext, schema: SchemaRoot): string |
 }
 
 /**
+ * A `LocId` (or `LocId?`) as the CLI writes its full type — `fieldKind` is plain
+ * `text`, so the type name is what tells it apart from a string.
+ */
+const LOC_ID_TYPE = /^(?:System\.Nullable`1\[\[)?Robust\.Shared\.Localization\.LocId(?:$|[,\]])/;
+
+/**
+ * Whether the caret's value is a localization key: a slot declared `LocId`, a
+ * list of them, or a dictionary whose values are.
+ */
+export function onLocIdSlot(ctx: CursorContext, schema: SchemaRoot): boolean {
+  if (ctx.token.kind !== 'value') return false;
+  const slot = slotAt(ctx, schema);
+  return !!slot && LOC_ID_TYPE.test(itemOf(slot.node).fullType ?? '');
+}
+
+/**
  * The declared field the caret's key names (hover, issue #30) — resolved the
  * same way field completion resolves its container, `!type:` tags on the way
  * included. `null` off a key, for a key the schema has no field by, and for a
