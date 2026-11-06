@@ -9,6 +9,7 @@ import {
   hoverAt,
   hoverMarkdown,
   locHoverMarkdown,
+  declarationSpan,
   locIdAt,
   opensSuggestOnNewLine,
   reopensSuggestAfterDeletion,
@@ -269,7 +270,7 @@ export class PrototypeDefinitionProvider implements vscode.DefinitionProvider {
       const origin = rangeOf(document, locId.range);
       const links = this.localizationIndex
         .declarations(locId.key, displayLocale())
-        .map((record) => locLink(this.forkRoot, origin, record));
+        .map((record) => locLink(this.forkRoot, origin, record, locId.key));
       return links.length > 0 ? links : undefined;
     }
 
@@ -351,29 +352,25 @@ export class PrototypeHoverProvider implements vscode.HoverProvider {
     const locId = this.localizationIndex.ready ? locIdAt(text, offset, schema) : null;
     if (locId) {
       const translations = this.localizationIndex.translations(locId.key, displayLocale());
-      const markdown = locHoverMarkdown(locId.key, translations, (record) =>
-        fileUriOf(this.forkRoot, record).with({ fragment: `L${record.line + 1}` }).toString(),
+      const markdown = locHoverMarkdown(locId.key, translations, (record, line) =>
+        fileUriOf(this.forkRoot, record).with({ fragment: `L${line + 1}` }).toString(),
       );
-      // VS Code anchors the hover at its range's start. A folded key's own text
-      // is hidden (display: none) and has no on-screen position, so the hover
-      // would drift to the line's end; start one character earlier instead — the
-      // always-visible space, quote or bracket right before the key.
-      const anchor: [number, number] = [Math.max(0, locId.range[0] - 1), locId.range[1]];
+      // VS Code anchors the hover at its range's start. A folded value
+      // (LocIdFoldingController hides it with display: none) has no on-screen
+      // position, so the hover would drift to the line's end; start one
+      // character earlier instead — the always-visible space or bracket before it.
+      const anchor: [number, number] = [Math.max(0, locId.outer[0] - 1), locId.outer[1]];
       return new vscode.Hover(new vscode.MarkdownString(markdown), rangeOf(document, anchor));
     }
 
     const hover = hoverAt(text, offset, schema);
     if (!hover) return undefined;
-    const [start, end] = hover.origin;
-    return new vscode.Hover(
-      new vscode.MarkdownString(hoverMarkdown(hover)),
-      new vscode.Range(document.positionAt(start), document.positionAt(end)),
-    );
+    return new vscode.Hover(new vscode.MarkdownString(hoverMarkdown(hover)), rangeOf(document, hover.origin));
   }
 }
 
 /** `[start, end)` offsets of `document` as a range. */
-function rangeOf(document: vscode.TextDocument, [start, end]: readonly [number, number]): vscode.Range {
+export function rangeOf(document: vscode.TextDocument, [start, end]: readonly [number, number]): vscode.Range {
   return new vscode.Range(document.positionAt(start), document.positionAt(end));
 }
 
@@ -383,12 +380,13 @@ function fileUriOf(forkRoot: vscode.Uri, record: LocRecord): vscode.Uri {
 }
 
 /**
- * A link to a key's declaration. Ids start their line, so the target is read
- * off the record without opening the file.
+ * A link to `key`'s declaration in `record` — the message id, or the `.attr`
+ * of `msg.attr`. The record carries the position, so the file is not opened.
  */
-function locLink(forkRoot: vscode.Uri, origin: vscode.Range, record: LocRecord): vscode.LocationLink {
-  const id = new vscode.Range(record.line, 0, record.line, record.id.length);
-  return { originSelectionRange: origin, targetUri: fileUriOf(forkRoot, record), targetRange: id, targetSelectionRange: id };
+function locLink(forkRoot: vscode.Uri, origin: vscode.Range, record: LocRecord, key: string): vscode.LocationLink {
+  const { line, column, length } = declarationSpan(record, key);
+  const target = new vscode.Range(line, column, line, column + length);
+  return { originSelectionRange: origin, targetUri: fileUriOf(forkRoot, record), targetRange: target, targetSelectionRange: target };
 }
 
 const KIND: Record<CompletionCandidate['kind'], vscode.CompletionItemKind> = {

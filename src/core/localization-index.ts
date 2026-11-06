@@ -8,7 +8,7 @@
  * incremental update — and by id, the unit of lookup.
  */
 
-import { flattenPattern, parseFluent, type FluentEntry } from './fluent';
+import { flattenPattern, parseFluent, type FluentEntry, type FluentPosition } from './fluent';
 
 /** Where `.ftl` files live, fork-relative; the first path segment below each is the locale. */
 export const LOCALE_ROOTS = ['Resources/Locale', 'RobustToolbox/Resources/Locale'] as const;
@@ -26,6 +26,8 @@ export interface LocRecord {
   readonly line: number;
   readonly value: string | null;
   readonly attributes: Readonly<Record<string, string>>;
+  /** Where each attribute's `.name` is written. */
+  readonly attributePositions: Readonly<Record<string, FluentPosition>>;
 }
 
 /** The locale a fork-relative `.ftl` path belongs to, or `null` outside every {@link LOCALE_ROOTS}. */
@@ -50,6 +52,7 @@ export function collectLocRecords(text: string, filePath: string): LocRecord[] {
     line: entry.line,
     value: entry.value,
     attributes: entry.attributes,
+    attributePositions: entry.attributePositions,
   }));
 }
 
@@ -78,10 +81,6 @@ export class LocalizationIndex {
 
   get size(): number {
     return this.byId.size;
-  }
-
-  get fileCount(): number {
-    return this.byFile.size;
   }
 
   /** The locales that declare at least one key, sorted. */
@@ -201,6 +200,19 @@ export class LocalizationIndex {
   }
 }
 
+/**
+ * Where `key` is written in `record`'s file: the message id at the start of
+ * its line, or — for `msg.attr` — the attribute's `.attr`.
+ */
+export function declarationSpan(record: LocRecord, key: string): { line: number; column: number; length: number } {
+  const { attribute } = splitKey(key);
+  if (attribute !== null && Object.hasOwn(record.attributePositions, attribute)) {
+    const { line, column } = record.attributePositions[attribute];
+    return { line, column, length: attribute.length + 1 };
+  }
+  return { line: record.line, column: 0, length: record.id.length };
+}
+
 /** `msg.attr` -> `{ id: 'msg', attribute: 'attr' }`; a plain id has no attribute. */
 function splitKey(key: string): { id: string; attribute: string | null } {
   const dot = key.indexOf('.');
@@ -220,11 +232,41 @@ function sameRecords(a: readonly LocRecord[], b: readonly LocRecord[]): boolean 
       record.id === other.id &&
       record.line === other.line &&
       record.value === other.value &&
-      JSON.stringify(record.attributes) === JSON.stringify(other.attributes)
+      JSON.stringify(record.attributes) === JSON.stringify(other.attributes) &&
+      JSON.stringify(record.attributePositions) === JSON.stringify(other.attributePositions)
     );
   });
 }
 
 function compare(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+// ---------------------------------------------------------------------------
+// Status
+// ---------------------------------------------------------------------------
+
+/**
+ * The localization index's state, shaped like the prototype index's
+ * `IndexStatus`: one `state` discriminant and a `message` to log verbatim.
+ */
+export type LocaleIndexStatus =
+  | { readonly state: 'building'; readonly message: string }
+  | { readonly state: 'ready'; readonly message: string; readonly keys: number }
+  | { readonly state: 'failed'; readonly message: string };
+
+export function localeIndexBuilding(): LocaleIndexStatus {
+  return { state: 'building', message: 'Indexing localization…' };
+}
+
+export function localeIndexReady(keys: number, files: number, locales: readonly string[]): LocaleIndexStatus {
+  return {
+    state: 'ready',
+    keys,
+    message: `Localization index: ${keys} keys in ${files} files (${locales.join(', ') || 'no locales'}).`,
+  };
+}
+
+export function localeIndexFailed(reason: string): LocaleIndexStatus {
+  return { state: 'failed', message: `Localization index failed: ${reason}` };
 }

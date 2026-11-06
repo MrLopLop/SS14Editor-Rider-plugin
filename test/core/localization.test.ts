@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { foldedText, locHoverMarkdown, locIdAt, locIdSpansIn } from '../../src/core/loc-id';
-import { collectLocRecords, LocalizationIndex, localeOf } from '../../src/core/localization-index';
+import { collectLocRecords, declarationSpan, LocalizationIndex, localeOf } from '../../src/core/localization-index';
 import { schemaSnapshot } from './prototype-fixtures';
 
 const SCHEMA = schemaSnapshot();
@@ -61,6 +61,12 @@ describe('LocalizationIndex', () => {
     expect(index.has('skill-name.toString')).toBe(false);
   });
 
+  it('points a declaration at the id, or at the attribute of msg.attr', () => {
+    const [record] = index.declarations('skill-name.desc');
+    expect(declarationSpan(record, 'skill-name')).toEqual({ line: 0, column: 0, length: 10 });
+    expect(declarationSpan(record, 'skill-name.desc')).toEqual({ line: 1, column: 4, length: 5 });
+  });
+
   it('lists one translation per locale', () => {
     expect(index.translations('skill-name', 'ru-RU').map((t) => [t.locale, t.text])).toEqual([
       ['ru-RU', 'Фехтование'],
@@ -110,6 +116,9 @@ describe('LocId spans', () => {
     expect(spans.map((span) => span.key)).toEqual(['skill-name', 'rattle-x', 'wires-board', 'popup-a', 'popup-b', 'rattle-x']);
     const quoted = spans[1];
     expect(TEXT.slice(quoted.range[0], quoted.range[1])).toBe('rattle-x');
+    // A fold hides the YAML quotes too, or they would wrap its own: `""text""`.
+    expect(TEXT.slice(quoted.outer[0], quoted.outer[1])).toBe('"rattle-x"');
+    expect(locIdAt(TEXT, quoted.outer[0], SCHEMA)?.key).toBe('rattle-x');
   });
 
   it('skips an entity name, which is a plain string, and a non-LocId field', () => {
@@ -120,7 +129,7 @@ describe('LocId spans', () => {
 
   it('answers the value under the caret, at either end too', () => {
     const start = TEXT.indexOf('wires-board');
-    expect(locIdAt(TEXT, start, SCHEMA)).toEqual({ range: [start, start + 11], key: 'wires-board' });
+    expect(locIdAt(TEXT, start, SCHEMA)).toEqual({ range: [start, start + 11], outer: [start, start + 11], key: 'wires-board' });
     expect(locIdAt(TEXT, start + 11, SCHEMA)?.key).toBe('wires-board');
     expect(locIdAt(TEXT, TEXT.indexOf('boardName'), SCHEMA)).toBeNull();
     expect(locIdAt(TEXT, TEXT.indexOf('Board\n'), SCHEMA)).toBeNull();
@@ -141,7 +150,7 @@ describe('presentation', () => {
 
   it('lists each locale with a link in the hover', () => {
     const index = indexOf({ [EN]: 'k = Hello *world*\n', [RU]: 'k = Привет\n' });
-    const markdown = locHoverMarkdown('k', index.translations('k', 'ru-RU'), (record) => `file:///${record.filePath}#L${record.line + 1}`);
+    const markdown = locHoverMarkdown('k', index.translations('k', 'ru-RU'), (record, line) => `file:///${record.filePath}#L${line + 1}`);
     expect(markdown).toContain('**ru-RU**: Привет — [skills\\.ftl:1](file:///Resources/Locale/ru-RU/skills.ftl#L1)');
     expect(markdown).toContain('**en-US**: Hello \\*world\\*');
     expect(locHoverMarkdown('k', [], () => '')).toContain('No translation found');

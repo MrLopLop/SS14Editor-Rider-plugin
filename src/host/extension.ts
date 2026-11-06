@@ -11,6 +11,7 @@ import { TextProviderController } from './text-providers';
 
 export const REBUILD_SCHEMA_COMMAND = 'ss14editor.rebuildSchema';
 export const REBUILD_PROTOTYPE_INDEX_COMMAND = 'ss14editor.rebuildPrototypeIndex';
+export const REBUILD_LOCALIZATION_INDEX_COMMAND = 'ss14editor.rebuildLocalizationIndex';
 
 export function activate(context: vscode.ExtensionContext): void {
   const manifest = vscode.extensions.getExtension(QUALIFIED_EXTENSION_ID)?.packageJSON as
@@ -42,6 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
     locIdFolding,
     vscode.commands.registerCommand(REBUILD_SCHEMA_COMMAND, () => schema.rebuild()),
     vscode.commands.registerCommand(REBUILD_PROTOTYPE_INDEX_COMMAND, () => prototypeIndex.rebuild()),
+    vscode.commands.registerCommand(REBUILD_LOCALIZATION_INDEX_COMMAND, () => localizationIndex.rebuild()),
     vscode.commands.registerCommand(TOGGLE_LOC_ID_FOLDING_COMMAND, () => toggleLocIdFolding()),
   );
 

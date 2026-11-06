@@ -56,5 +56,6 @@ start things over:
 
 - **SS14: Rebuild schema** re-reads components and fields from the built fork.
 - **SS14: Rebuild prototype index** re-reads all prototype files.
+- **SS14: Rebuild localization index** re-reads all `.ftl` files.
 - **SS14: Toggle LocId folding** shows LocId keys as written, or as their
   translation again.

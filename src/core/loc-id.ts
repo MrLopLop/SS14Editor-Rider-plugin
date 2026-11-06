@@ -7,14 +7,16 @@
  */
 
 import { contextAt, onLocIdSlot } from './completion';
-import type { LocRecord, LocTranslation } from './localization-index';
-import { parsePrototypeFile, valueScalarsOf, type PrototypeFile } from './prototype-yaml';
+import { declarationSpan, type LocRecord, type LocTranslation } from './localization-index';
+import { parsePrototypeFile, valueScalarsOf, type PrototypeFile, type ScalarSpan } from './prototype-yaml';
 import type { SchemaRoot } from './schema-contract';
 
 /** A LocId value as written. */
 export interface LocIdSpan {
   /** `[start, end)` of the key text, quotes excluded. */
   readonly range: readonly [number, number];
+  /** `[start, end)` of the value as written, YAML quotes included — what a fold hides. */
+  readonly outer: readonly [number, number];
   readonly key: string;
 }
 
@@ -22,22 +24,30 @@ export interface LocIdSpan {
 export function locIdAt(text: string, offset: number, schema: SchemaRoot): LocIdSpan | null {
   const file = parsePrototypeFile(text);
   if (!file.ok) return null;
-  const scalar = valueScalarsOf(file).find(({ range }) => offset >= range[0] && offset <= range[1]);
+  const scalar = valueScalarsOf(file).find(({ outer }) => offset >= outer[0] && offset <= outer[1]);
   if (!scalar || !isLocId(file, scalar.range[0], schema)) return null;
-  return { range: scalar.range, key: scalar.value };
+  return toSpan(scalar);
 }
 
 /**
- * Every LocId value in `text` that `known` accepts, in source order. `known` is
- * checked first — it is a map lookup, while telling a slot's type walks the
+ * Every LocId value in `text` whose key `isDeclared` accepts, in source order.
+ * `isDeclared` is checked first — it is a map lookup, while telling a slot's type walks the
  * document — so values that are not keys at all cost almost nothing.
  */
-export function locIdSpansIn(text: string, schema: SchemaRoot, known: (key: string) => boolean): LocIdSpan[] {
+export function locIdSpansIn(
+  text: string,
+  schema: SchemaRoot,
+  isDeclared: (key: string) => boolean,
+): LocIdSpan[] {
   const file = parsePrototypeFile(text);
   if (!file.ok) return [];
   return valueScalarsOf(file)
-    .filter((scalar) => known(scalar.value) && isLocId(file, scalar.range[0], schema))
-    .map((scalar) => ({ range: scalar.range, key: scalar.value }));
+    .filter((scalar) => isDeclared(scalar.value) && isLocId(file, scalar.range[0], schema))
+    .map(toSpan);
+}
+
+function toSpan(scalar: ScalarSpan): LocIdSpan {
+  return { range: scalar.range, outer: scalar.outer, key: scalar.value };
 }
 
 function isLocId(file: PrototypeFile, offset: number, schema: SchemaRoot): boolean {
@@ -49,26 +59,27 @@ const MAX_HOVER_TEXT = 300;
 
 /**
  * The hover for a LocId: the key, then each locale's text with a link to where
- * it is declared. `linkOf` turns a record into a link target (the host knows
- * the fork root). No translations at all reads as "not found".
+ * it is declared. `linkOf` turns a record and the 0-based line `key` is
+ * declared on into a link target (the host knows the fork root). No translations at all reads as "not found".
  */
 export function locHoverMarkdown(
   key: string,
   translations: readonly LocTranslation[],
-  linkOf: (record: LocRecord) => string,
+  linkOf: (record: LocRecord, line: number) => string,
 ): string {
   const head = ['```fluent', key, '```'].join('\n');
   if (translations.length === 0) return `${head}\n\n*No translation found.*`;
   const lines = translations.map(({ locale, record, text }) => {
     const shown = text.length > MAX_HOVER_TEXT ? `${text.slice(0, MAX_HOVER_TEXT)}…` : text;
     const file = record.filePath.slice(record.filePath.lastIndexOf('/') + 1);
-    return `- **${locale}**: ${escapeMarkdown(shown) || '*(empty)*'} — [${escapeMarkdown(file)}:${record.line + 1}](${linkOf(record)})`;
+    const { line } = declarationSpan(record, key);
+    return `- **${locale}**: ${escapeMarkdown(shown) || '*(empty)*'} — [${escapeMarkdown(file)}:${line + 1}](${linkOf(record, line)})`;
   });
   return `${head}\n\n${lines.join('\n')}`;
 }
 
 /** Longest folded preview; the rest is cut with `…`. */
-export const MAX_PREVIEW_LENGTH = 60;
+const MAX_PREVIEW_LENGTH = 60;
 
 /** The text a LocId key folds into: quoted, cut to {@link MAX_PREVIEW_LENGTH}. */
 export function foldedText(preview: string): string {

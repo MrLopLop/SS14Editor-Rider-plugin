@@ -28,8 +28,8 @@ describe('parseFluent', () => {
   it('handles CRLF and a BOM', () => {
     const entries = parseFluent('﻿a = one\r\n    .b = two\r\nc = three\r\n');
     expect(entries).toEqual([
-      { id: 'a', value: 'one', attributes: { b: 'two' }, line: 0, offset: 0 },
-      { id: 'c', value: 'three', attributes: {}, line: 2, offset: 23 },
+      { id: 'a', value: 'one', attributes: { b: 'two' }, attributePositions: { b: { line: 1, column: 4 } }, line: 0, offset: 0 },
+      { id: 'c', value: 'three', attributes: {}, attributePositions: {}, line: 2, offset: 23 },
     ]);
   });
 

@@ -1,10 +1,10 @@
 import * as vscode from 'vscode';
 
-import { foldedText, locIdSpansIn, type LocalizationIndexView, type LocIdSpan } from '../core';
+import { foldedText, locIdSpansIn, type LocalizationIndexView, type LocIdSpan, type SchemaRoot } from '../core';
 import type { ForkStatusController } from './fork-status-controller';
 import type { SchemaController } from './schema-controller';
 import { displayLocale, foldingEnabled, LOCALIZATION_SECTION } from './localization-settings';
-import { selectorFor } from './text-providers';
+import { rangeOf, selectorFor } from './text-providers';
 
 /** Re-scan a document this long after its last edit; the decorations ride along with the text meanwhile. */
 const EDIT_DEBOUNCE_MS = 150;
@@ -95,7 +95,8 @@ export class LocIdFoldingController implements vscode.Disposable {
     const locale = displayLocale();
     const folds: vscode.DecorationOptions[] = [];
     for (const span of this.spansOf(document, schema)) {
-      const range = new vscode.Range(document.positionAt(span.range[0]), document.positionAt(span.range[1]));
+      // The whole value, YAML quotes included: the fold draws its own.
+      const range = rangeOf(document, span.outer);
       // Inclusive at both ends: a caret just before or after the key unfolds it too.
       if (editor.selections.some((selection) => selection.intersection(range) !== undefined)) continue;
       const preview = this.index.preview(span.key, locale);
@@ -115,7 +116,7 @@ export class LocIdFoldingController implements vscode.Disposable {
     return folds;
   }
 
-  private spansOf(document: vscode.TextDocument, schema: NonNullable<SchemaController['schema']>): readonly LocIdSpan[] {
+  private spansOf(document: vscode.TextDocument, schema: SchemaRoot): readonly LocIdSpan[] {
     const key = document.uri.toString();
     const cached = this.spans.get(key);
     if (cached?.version === document.version) return cached.spans;

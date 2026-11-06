@@ -1,4 +1,5 @@
 import type { ForkFolderStatus } from './fork-detection';
+import type { LocaleIndexStatus } from './localization-index';
 import type { IndexStatus } from './prototype-index';
 import type { SchemaStatus } from './schema';
 
@@ -25,6 +26,9 @@ export const schemaStatusLog: StatusLog<SchemaStatus> = statusLog(schemaLines);
  */
 export const indexStatusLog: StatusLog<IndexStatus> = statusLog(indexLines);
 
+/** The localization index, logged like the prototype index: its start once, and a failure. */
+export const localeIndexStatusLog: StatusLog<LocaleIndexStatus> = statusLog(localeIndexLines);
+
 function statusLog<T>(lines: (status: T | null) => string[]): StatusLog<T> {
   return (previous, next) =>
     linesIfChanged(previous === undefined ? undefined : lines(previous), lines(next));
@@ -48,6 +52,11 @@ function indexLines(status: IndexStatus | null): string[] {
   if (status === null || status.state === 'ready') return [];
   if (status.state === 'building') return ['[index] Indexing prototypes…'];
   return prefixed('[index]', status.message);
+}
+
+function localeIndexLines(status: LocaleIndexStatus | null): string[] {
+  if (status === null || status.state === 'ready') return [];
+  return prefixed('[locale]', status.message);
 }
 
 /** One log line per message line, each carrying the prefix. */

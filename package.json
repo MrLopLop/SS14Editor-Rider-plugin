@@ -2,7 +2,7 @@
   "name": "ss14editor",
   "displayName": "SS14 Prototype Editor",
   "description": "Autocomplete, hover docs and go-to-definition for Space Station 14 YAML prototypes, built from your fork's code.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "MIT",
   "publisher": "TheShuEd",
   "private": true,
@@ -42,6 +42,11 @@
       {
         "command": "ss14editor.rebuildPrototypeIndex",
         "title": "Rebuild prototype index",
+        "category": "SS14"
+      },
+      {
+        "command": "ss14editor.rebuildLocalizationIndex",
+        "title": "Rebuild localization index",
         "category": "SS14"
       },
       {

@@ -3,7 +3,17 @@ import { Worker } from 'node:worker_threads';
 
 import * as vscode from 'vscode';
 
-import { collectLocRecords, LOCALE_ROOTS, LocalizationIndex, localeOf } from '../core';
+import {
+  collectLocRecords,
+  LOCALE_ROOTS,
+  LocalizationIndex,
+  localeIndexBuilding,
+  localeIndexFailed,
+  localeIndexReady,
+  localeIndexStatusLog,
+  localeOf,
+  type LocaleIndexStatus,
+} from '../core';
 import type { ForkStatusController } from './fork-status-controller';
 import type { FromWorker, ToWorker } from './localization-index-worker';
 
@@ -25,7 +35,9 @@ const WATCH_GLOB = `{${LOCALE_ROOTS.join(',')}}/**`;
  *   - The unsaved text of an open `.ftl` is read on this thread as it is typed
  *     (one file parses in well under a millisecond), so previews follow edits
  *     before they are saved; closing it unsaved re-reads it from disk.
- *   - Logs to the Output channel; writes nothing.
+ *   - Logs its start, load and failure to the Output channel; a failed or
+ *     crashed build stays failed until `SS14: Rebuild localization index`.
+ *     Writes nothing.
  */
 export class LocalizationIndexController implements vscode.Disposable {
   readonly index = new LocalizationIndex();
@@ -36,6 +48,8 @@ export class LocalizationIndexController implements vscode.Disposable {
   private pendingPaths = new Set<string>();
   private updateTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly editTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** `undefined` until the first status is reported, so that first one is always logged. */
+  private status: LocaleIndexStatus | null | undefined = undefined;
 
   private readonly disposables: vscode.Disposable[] = [];
   private readonly updateEmitter = new vscode.EventEmitter<void>();
@@ -54,6 +68,13 @@ export class LocalizationIndexController implements vscode.Disposable {
       vscode.workspace.onDidCloseTextDocument((document) => this.onClosed(document)),
     );
     this.onForkStatusChanged();
+  }
+
+  /** `SS14: Rebuild localization index`: re-read every `.ftl` file. */
+  rebuild(): void {
+    const root = this.forkStatus.recognizedRoot();
+    if (root) this.start(root.uri);
+    else this.log.appendLine('[locale] rebuild skipped: the folder is not a recognised, built SS14 fork');
   }
 
   private onForkStatusChanged(): void {
@@ -75,12 +96,15 @@ export class LocalizationIndexController implements vscode.Disposable {
       if (this.worker === worker) this.onWorkerMessage(message);
     });
     worker.on('error', (err) => {
-      if (this.worker === worker) this.log.appendLine(`[locale] worker crashed: ${err.stack ?? err.message}`);
+      if (this.worker !== worker) return;
+      this.log.appendLine(`[locale] worker crashed: ${err.stack ?? err.message}`);
+      this.setStatus(localeIndexFailed(err.message));
     });
     worker.on('exit', (code) => {
+      // stop() clears `this.worker` before terminating, so this is an unexpected death.
       if (this.worker !== worker) return;
       this.worker = undefined;
-      this.log.appendLine(`[locale] worker exited with code ${code}`);
+      if (this.status?.state !== 'failed') this.setStatus(localeIndexFailed(`the worker exited (code ${code})`));
     });
 
     this.watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(rootUri, WATCH_GLOB));
@@ -89,7 +113,7 @@ export class LocalizationIndexController implements vscode.Disposable {
     this.watcher.onDidCreate(queue);
     this.watcher.onDidDelete(queue);
 
-    this.log.appendLine('[locale] Indexing localization…');
+    this.setStatus(localeIndexBuilding());
     this.send({ type: 'build', forkRoot: rootUri.fsPath });
   }
 
@@ -107,6 +131,7 @@ export class LocalizationIndexController implements vscode.Disposable {
     this.forkRoot = undefined;
     if (wasActive) {
       this.index.reset();
+      this.setStatus(null);
       this.updateEmitter.fire();
     }
   }
@@ -161,14 +186,20 @@ export class LocalizationIndexController implements vscode.Disposable {
 
   private onWorkerMessage(message: FromWorker): void {
     switch (message.type) {
-      case 'loaded':
+      case 'loaded': {
         this.index.replaceAll(message.records);
-        this.log.appendLine(
-          `[locale] ${this.index.size} keys in ${message.files} files (${this.index.locales().join(', ') || 'no locales'}) ` +
-            `indexed in ${message.elapsedMs} ms`,
-        );
+        // Files already edited and unsaved (restored by hot exit, or typed
+        // during the build) read as typed, not as on disk.
+        for (const document of vscode.workspace.textDocuments) {
+          const rel = document.isDirty ? this.localeFileOf(document) : undefined;
+          if (rel !== undefined) this.index.updateFile(rel, collectLocRecords(document.getText(), rel));
+        }
+        const ready = localeIndexReady(this.index.size, message.files, this.index.locales());
+        this.log.appendLine(`[locale] ${ready.message.replace(/.$/, '')} — indexed in ${message.elapsedMs} ms.`);
+        this.setStatus(ready);
         this.updateEmitter.fire();
         break;
+      }
       case 'updated': {
         if (!this.index.ready) break;
         let changed = false;
@@ -184,9 +215,14 @@ export class LocalizationIndexController implements vscode.Disposable {
         break;
       }
       case 'failed':
-        this.log.appendLine(`[locale] Localization index failed: ${message.reason}`);
+        this.setStatus(localeIndexFailed(message.reason));
         break;
     }
+  }
+
+  private setStatus(status: LocaleIndexStatus | null): void {
+    for (const line of localeIndexStatusLog(this.status, status)) this.log.appendLine(line);
+    this.status = status;
   }
 
   dispose(): void {

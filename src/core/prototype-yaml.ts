@@ -451,6 +451,8 @@ export function resolveField(file: PrototypeFile, address: FieldAddress): FieldR
 export interface ScalarSpan {
   /** `[start, end)` of the text, quotes excluded. */
   readonly range: readonly [number, number];
+  /** `[start, end)` of the whole scalar as written, quotes included — {@link range} for a plain one. */
+  readonly outer: readonly [number, number];
   readonly value: string;
 }
 
@@ -471,7 +473,7 @@ export function valueScalarsOf(file: PrototypeFile): ScalarSpan[] {
       const start = node.range[0] + (quoted ? 1 : 0);
       const end = node.range[1] - (quoted ? 1 : 0);
       if (end <= start || /[\r\n]/.test(text.slice(start, end))) return;
-      spans.push({ range: [start, end], value: node.value });
+      spans.push({ range: [start, end], outer: [node.range[0], node.range[1]], value: node.value });
     },
   });
   return spans;

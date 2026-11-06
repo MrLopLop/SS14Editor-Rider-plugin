@@ -23,10 +23,18 @@ export interface FluentEntry {
   /** The value pattern, continuation lines joined with `\n`; `null` when the entry has only attributes. */
   readonly value: string | null;
   readonly attributes: Readonly<Record<string, string>>;
+  /** Where each attribute's `.name` is written: 0-based line and column of the dot. */
+  readonly attributePositions: Readonly<Record<string, FluentPosition>>;
   /** 0-based line of the id. */
   readonly line: number;
   /** Offset of the id in the (BOM-stripped) text. */
   readonly offset: number;
+}
+
+/** A 0-based line and column. */
+export interface FluentPosition {
+  readonly line: number;
+  readonly column: number;
 }
 
 const ENTRY = /^(-?[a-zA-Z][a-zA-Z0-9_-]*)[ \t]*=[ \t]*(.*)$/;
@@ -39,8 +47,14 @@ export function parseFluent(rawText: string): FluentEntry[] {
   const text = rawText.charCodeAt(0) === 0xfeff ? rawText.slice(1) : rawText;
   const entries: FluentEntry[] = [];
 
-  let current: { id: string; value: string[]; attributes: Record<string, string[]>; line: number; offset: number } | null =
-    null;
+  let current: {
+    id: string;
+    value: string[];
+    attributes: Record<string, string[]>;
+    attributePositions: Record<string, FluentPosition>;
+    line: number;
+    offset: number;
+  } | null = null;
   let target: string[] | null = null;
 
   const close = () => {
@@ -48,7 +62,14 @@ export function parseFluent(rawText: string): FluentEntry[] {
     const value = joinLines(current.value);
     const attributes: Record<string, string> = {};
     for (const [name, lines] of Object.entries(current.attributes)) attributes[name] = joinLines(lines) ?? '';
-    entries.push({ id: current.id, value, attributes, line: current.line, offset: current.offset });
+    entries.push({
+      id: current.id,
+      value,
+      attributes,
+      attributePositions: { ...current.attributePositions },
+      line: current.line,
+      offset: current.offset,
+    });
     current = null;
     target = null;
   };
@@ -65,7 +86,14 @@ export function parseFluent(rawText: string): FluentEntry[] {
     const entry = ENTRY.exec(raw);
     if (entry) {
       close();
-      current = { id: entry[1], value: [], attributes: Object.create(null), line, offset: lineStart };
+      current = {
+        id: entry[1],
+        value: [],
+        attributes: Object.create(null),
+        attributePositions: Object.create(null),
+        line,
+        offset: lineStart,
+      };
       target = current.value;
       if (entry[2]) target.push(entry[2]);
       continue;
@@ -75,6 +103,7 @@ export function parseFluent(rawText: string): FluentEntry[] {
       const attribute = ATTRIBUTE.exec(raw);
       if (attribute) {
         target = current.attributes[attribute[1]] = [];
+        current.attributePositions[attribute[1]] = { line, column: raw.indexOf('.') };
         if (attribute[2]) target.push(attribute[2]);
       } else {
         target?.push(raw.trim());

@@ -73,6 +73,14 @@ suite('activation smoke', () => {
     await ext?.activate();
     const registered = await vscode.commands.getCommands(true);
     assert.ok(registered.includes('ss14editor.toggleLocIdFolding'), 'ss14editor.toggleLocIdFolding is not registered');
+    assert.ok(
+      commands.some((c) => c.command === 'ss14editor.rebuildLocalizationIndex'),
+      'ss14editor.rebuildLocalizationIndex is not contributed',
+    );
+    assert.ok(
+      registered.includes('ss14editor.rebuildLocalizationIndex'),
+      'ss14editor.rebuildLocalizationIndex is not registered',
+    );
   });
 
   test('no sidebar view or activity-bar container is contributed (issue #45)', () => {
