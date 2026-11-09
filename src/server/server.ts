@@ -270,8 +270,8 @@ function locatorFor(forkRoot: string): ClassLocator {
 /**
  * A prototype id jumps to its declaration (engine prototypes resolve the same
  * way, into `RobustToolbox/Resources/EnginePrototypes/`); a component name or a
- * `!type:` tag to its C# class — one link per part of a partial class; a field
- * key to its C# field or property, on the owner or one of its bases.
+ * `!type:` tag or a prototype's `type:` to its C# class — one link per part of a
+ * partial class; a field key to its C# member, in the class that declares it.
  */
 connection.onDefinition(async ({ textDocument, position }): Promise<LocationLink[] | null> => {
   const context = contextFor(textDocument.uri);
@@ -287,25 +287,16 @@ connection.onDefinition(async ({ textDocument, position }): Promise<LocationLink
     return link ? [link] : null;
   }
 
-  const field = fieldDefinitionAt(text, offset, context.schema);
-  if (field) {
-    const members = await locatorFor(root.path).locateMember(field.owner, field.member);
-    const links = members
-      .map((member) => {
-        const name: [number, number] = [member.offset, member.offset + member.name.length];
-        return linkTo(root.path, document, field.origin, member.filePath, name, name);
-      })
-      .filter((link) => link !== undefined);
-    return links.length > 0 ? links : null;
-  }
-
   const named = classDefinitionAt(text, offset, context.schema);
-  if (!named) return null;
-  const locations = await locatorFor(root.path).locate(named.className);
+  const field = named ? null : fieldDefinitionAt(text, offset, context.schema);
+  const asked = named ?? field;
+  if (!asked) return null;
+  const locator = locatorFor(root.path);
+  const locations = field ? await locator.locateMember(field.className, field.member) : await locator.locate(asked.className);
   const links = locations
     .map((location) => {
       const name: [number, number] = [location.offset, location.offset + location.name.length];
-      return linkTo(root.path, document, named.origin, location.filePath, name, name);
+      return linkTo(root.path, document, asked.origin, location.filePath, name, name);
     })
     .filter((link) => link !== undefined);
   return links.length > 0 ? links : null;

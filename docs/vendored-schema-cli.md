@@ -16,19 +16,31 @@ single record of origin.
 | This repo | Predecessor path | Change |
 |---|---|---|
 | `schema-cli/vendor/MetadataExtractor.cs`  | `src/Metadata/MetadataExtractor.cs`  | patched — see [Local fixes](#local-fixes) |
-| `schema-cli/vendor/FieldExtractor.cs`     | `src/Metadata/FieldExtractor.cs`     | patched — see [Local fixes](#local-fixes) |
+| `schema-cli/vendor/FieldExtractor.cs`     | `src/Metadata/FieldExtractor.cs`     | patched — see [Local fixes](#local-fixes), + `DeclaringTypeName` (see [Local changes](#local-changes)) |
 | `schema-cli/vendor/CtorDefaultsScanner.cs`| `src/Metadata/CtorDefaultsScanner.cs`| verbatim |
 | `schema-cli/vendor/XmlDocReader.cs`       | `src/Metadata/XmlDocReader.cs`       | verbatim |
-| `schema-cli/vendor/MetadataModels.cs`     | `src/Metadata/MetadataModels.cs`     | verbatim — the `MetadataRoot` contract |
+| `schema-cli/vendor/MetadataModels.cs`     | `src/Metadata/MetadataModels.cs`     | verbatim + `FieldMetadata.DeclaringType` (see below) — the `MetadataRoot` contract |
 | `schema-cli/vendor/Logger.cs`             | `src/Core/Logger.cs`                 | verbatim — the only support dependency of the extractors |
-| `schema-cli/tests/*.cs`, `schema-cli/tests/Fixtures/*.cs` (plus the tests for the local fixes) | `tests/ss14-editor.Tests/{MetadataExtractor,FieldExtractor,CtorDefaultsScanner,XmlDocReader}Tests.cs`, `TempDir.cs`, `Fixtures/{FixtureTypes,RuntimeHandleStubs}.cs` | verbatim |
+| `schema-cli/tests/*.cs`, `schema-cli/tests/Fixtures/*.cs` (plus the tests for the local fixes) | `tests/ss14-editor.Tests/{MetadataExtractor,FieldExtractor,CtorDefaultsScanner,XmlDocReader}Tests.cs`, `TempDir.cs`, `Fixtures/{FixtureTypes,RuntimeHandleStubs}.cs` | verbatim (except `DeclaringTypeTests.cs`, which is this repo's own) |
 
-The vendored `.cs` files were copied byte-for-byte; the two listed as patched
-carry only the [local fixes](#local-fixes) below. Only the project files
+The vendored `.cs` files were copied byte-for-byte, except for the
+[local fixes](#local-fixes) and the change listed under
+[Local changes](#local-changes) (it touches `FieldExtractor.cs` and
+`MetadataModels.cs`). Only the project files
 (`.csproj`), the `InternalsVisibleTo` shim and the entry point
 (`schema-cli/Program.cs`) are new. The spec envisaged a ~30-line entry point;
 the actual ~110 lines are that core plus the spec-required `sourceFingerprint`
 helper, the unreadable-assembly checks and the argument/error handling.
+
+## Local changes
+
+- **`FieldMetadata.DeclaringType`** (schema version 2) — the full name of the
+  class whose source declares the field: a base class for an inherited field,
+  the open generic definition (`NS.Base`1`) for a member of a closed generic
+  base, `NS.Outer+Inner` for a nested class. Go-to-definition on a field key
+  uses it to find the member in C# source. Filled by
+  `FieldExtractor.DeclaringTypeName`; tested in
+  `schema-cli/tests/DeclaringTypeTests.cs`.
 
 ## What was NOT copied
 
@@ -48,12 +60,13 @@ Their tests (`ApiRouterTests`, `ProtoIndexServiceTests`,
 
 ## Contract addition
 
-The predecessor's `MetadataRoot` is used **as-is**. `Program.cs` wraps the
+The predecessor's `MetadataRoot` is used as-is, apart from the one field added
+under "Local changes" (`FieldMetadata.DeclaringType`). `Program.cs` wraps the
 extractor's output with two extra root fields before writing it:
 
 - `schemaVersion` (int) — bumped when the emitted document's shape changes,
 - `sourceFingerprint` (string) — SHA-256 over `path|size|mtime` of every input
-  DLL plus the CLI's own version.
+  DLL plus the CLI's own version and `schemaVersion`.
 
 ## Local fixes
 

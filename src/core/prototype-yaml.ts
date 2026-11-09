@@ -44,6 +44,7 @@ import {
   LineCounter,
   parseAllDocuments,
   Scalar,
+  visit,
   type Alias,
   type Node,
   type Pair,
@@ -475,6 +476,42 @@ export function resolveField(file: PrototypeFile, address: FieldAddress): FieldR
   }
 
   return { outcome: 'resolved', field: describeValue(descent.pair, descent.container) };
+}
+
+// ---------------------------------------------------------------------------
+// every value scalar
+// ---------------------------------------------------------------------------
+
+/** One plain or quoted single-line string value as written. */
+export interface ScalarSpan {
+  /** `[start, end)` of the text, quotes excluded. */
+  readonly range: readonly [number, number];
+  /** `[start, end)` of the whole scalar as written, quotes included — {@link range} for a plain one. */
+  readonly outer: readonly [number, number];
+  readonly value: string;
+}
+
+/**
+ * Every plain or quoted string scalar that is a value — a map value or a
+ * sequence item — never a key, in source order. Block scalars and multiline
+ * flow scalars are left out: neither is ever an id.
+ */
+export function valueScalarsOf(file: PrototypeFile): ScalarSpan[] {
+  const { root, text } = must(file);
+  if (!root) return [];
+  const spans: ScalarSpan[] = [];
+  visit(root, {
+    Scalar(key, node) {
+      if (key === 'key' || typeof node.value !== 'string' || !node.range) return;
+      const quoted = node.type === Scalar.QUOTE_DOUBLE || node.type === Scalar.QUOTE_SINGLE;
+      if (!quoted && node.type !== Scalar.PLAIN) return;
+      const start = node.range[0] + (quoted ? 1 : 0);
+      const end = node.range[1] - (quoted ? 1 : 0);
+      if (end <= start || /[\r\n]/.test(text.slice(start, end))) return;
+      spans.push({ range: [start, end], outer: [node.range[0], node.range[1]], value: node.value });
+    },
+  });
+  return spans;
 }
 
 // ---------------------------------------------------------------------------

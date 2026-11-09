@@ -1,11 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  baseClassOf,
   ClassLocator,
   classDeclarationsIn,
   docSummaryBefore,
-  memberOffsetIn,
   type CsSourceTree,
 } from '../../src/core/class-location';
 import { classDefinitionAt } from '../../src/core/definition';
@@ -133,6 +131,26 @@ describe('classDeclarationsIn — class declarations of one C# file', () => {
     expect(classDeclarationsIn(text).map((d) => [d.name, d.namespace])).toEqual([
       ['Outer', 'Content.Shared.Foo'],
       ['NestedComponent', 'Content.Shared.Foo'],
+    ]);
+  });
+
+  it('reports structs and records — a `[DataDefinition]` may be either — but not a `struct` constraint or a `record` variable', () => {
+    const text = [
+      'namespace Content.Shared.Foo;',
+      'public partial struct Hand {}',
+      'public readonly record struct Entry(string Id);',
+      'public sealed partial record Config {}',
+      'public sealed class Box<T> where T : struct',
+      '    where T2 : class {',
+      '    void F() { foreach (var record in Records) {} }',
+      '}',
+    ].join('\n');
+
+    expect(classDeclarationsIn(text).map((d) => [d.name, text.slice(d.offset, d.offset + d.name.length)])).toEqual([
+      ['Hand', 'Hand'],
+      ['Entry', 'Entry'],
+      ['Config', 'Config'],
+      ['Box', 'Box'],
     ]);
   });
 });
@@ -380,7 +398,6 @@ describe('classDefinitionAt — the component name under the caret', () => {
 
   it('has no target off the component name', () => {
     expect(classDefinitionAt(TEXT, TEXT.indexOf('icon'), SCHEMA)).toBeNull();
-    expect(classDefinitionAt(TEXT, TEXT.indexOf('entity'), SCHEMA)).toBeNull();
   });
 });
 
@@ -407,37 +424,6 @@ describe('docSummaryBefore — the /// summary over a declaration', () => {
     const inherited = '/// <inheritdoc/>\npublic int Count;';
     expect(docSummaryBefore(plain, plain.indexOf('Count'))).toBeNull();
     expect(docSummaryBefore(inherited, inherited.indexOf('Count'))).toBeNull();
-  });
-});
-
-describe('memberOffsetIn / baseClassOf — a field in a class body', () => {
-  const TEXT = [
-    'public sealed partial class ClothingComponent : BaseClothingComponent<int>, IComponent',
-    '{',
-    '    [DataField]',
-    '    public SoundSpecifier? EquipSound = new SoundPathSpecifier("/x.ogg");',
-    '    [DataField("slots")] public SlotFlags Slots { get; set; } = SlotFlags.NONE;',
-    '    public int[] Ids;',
-    '    public void Run() { var Local = 1; return Hidden; }',
-    '}',
-  ].join('\n');
-  const classOffset = TEXT.indexOf('ClothingComponent');
-
-  it('finds fields and properties at the body’s own depth', () => {
-    expect(memberOffsetIn(TEXT, classOffset, 'EquipSound')).toBe(TEXT.indexOf('EquipSound'));
-    expect(memberOffsetIn(TEXT, classOffset, 'Slots')).toBe(TEXT.indexOf('Slots {'));
-    expect(memberOffsetIn(TEXT, classOffset, 'Ids')).toBe(TEXT.indexOf('Ids'));
-  });
-
-  it('does not take a local or a statement inside a method for a field', () => {
-    expect(memberOffsetIn(TEXT, classOffset, 'Local')).toBeNull();
-    expect(memberOffsetIn(TEXT, classOffset, 'Hidden')).toBeNull();
-  });
-
-  it('names the base class, generics dropped, and none for interfaces only', () => {
-    expect(baseClassOf(TEXT, classOffset)).toBe('BaseClothingComponent');
-    const onlyInterfaces = 'public sealed class A : IFoo, IBar {}';
-    expect(baseClassOf(onlyInterfaces, onlyInterfaces.indexOf('A '))).toBeNull();
   });
 });
 
@@ -469,18 +455,10 @@ describe('ClassLocator — members and summaries from source', () => {
     );
   });
 
-  it('finds a field on the class, and one inherited from a base in another namespace', async () => {
+  it('reads a field\'s summary in the class declaring it, and none for a member it does not declare', async () => {
     const locator = new ClassLocator(tree(files));
-    expect(await locator.locateMember('Content.Shared.Clothing.ClothingComponent', 'Slots')).toEqual([
-      {
-        filePath: 'Content.Shared/Clothing/ClothingComponent.cs',
-        offset: files['Content.Shared/Clothing/ClothingComponent.cs'].indexOf('Slots ='),
-        name: 'Slots',
-        summary: 'Slots it fits.',
-      },
-    ]);
-    const [inherited] = await locator.locateMember('Content.Shared.Clothing.ClothingComponent', 'Sprite');
-    expect(inherited).toMatchObject({ filePath: 'Content.Shared/Clothing/BaseClothing.cs', summary: 'Worn sprite.' });
-    expect(await locator.locateMember('Content.Shared.Clothing.ClothingComponent', 'Nope')).toEqual([]);
+    expect(await locator.memberSummary('Content.Shared.Clothing.ClothingComponent', 'Slots')).toBe('Slots it fits.');
+    expect(await locator.memberSummary('Content.Shared.Clothing.Base.BaseClothing', 'Sprite')).toBe('Worn sprite.');
+    expect(await locator.memberSummary('Content.Shared.Clothing.ClothingComponent', 'Sprite')).toBeNull();
   });
 });

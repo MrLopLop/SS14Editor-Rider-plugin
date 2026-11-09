@@ -728,28 +728,29 @@ export function protoRefKindAt(ctx: CursorContext, schema: SchemaRoot): string |
 }
 
 /**
+ * A `LocId` (or `LocId?`) as the CLI writes its full type — `fieldKind` is plain
+ * `text`, so the type name is what tells it apart from a string.
+ */
+const LOC_ID_TYPE = /^(?:System\.Nullable`1\[\[)?Robust\.Shared\.Localization\.LocId(?:$|[,\]])/;
+
+/**
+ * Whether the caret's value is a localization key: a slot declared `LocId`, a
+ * list of them, or a dictionary whose values are.
+ */
+export function onLocIdSlot(ctx: CursorContext, schema: SchemaRoot): boolean {
+  if (ctx.token.kind !== 'value') return false;
+  const slot = slotAt(ctx, schema);
+  return !!slot && LOC_ID_TYPE.test(itemOf(slot.node).fullType ?? '');
+}
+
+/**
  * The declared field the caret's key names (hover, issue #30) — resolved the
  * same way field completion resolves its container, `!type:` tags on the way
  * included. `null` off a key, for a key the schema has no field by, and for a
  * dictionary entry's key, which is data rather than a field.
  */
 export function fieldAt(ctx: CursorContext, schema: SchemaRoot): FieldMetadata | null {
-  return fieldOwnerAt(ctx, schema)?.field ?? null;
-}
-
-/**
- * {@link fieldAt} with the class whose field list it was found in — a
- * component's, a prototype's or a `[DataDefinition]`'s full C# name — for
- * finding the field's declaration in source. The field itself may be declared
- * on a base class of that owner.
- */
-export function fieldOwnerAt(
-  ctx: CursorContext,
-  schema: SchemaRoot,
-): { readonly field: FieldMetadata; readonly owner: string | null } | null {
-  if (ctx.token.kind !== 'key') return null;
-  const slot = slotAt(ctx, schema);
-  return slot?.field ? { field: slot.field, owner: slot.owner } : null;
+  return ctx.token.kind === 'key' ? slotAt(ctx, schema)?.field ?? null : null;
 }
 
 /** The `type:` of `EntityPrototype` — what every `EntProtoId` names. */
@@ -933,8 +934,6 @@ const DICTIONARY_KIND = 'map';
 interface Slot {
   readonly field: FieldMetadata | null;
   readonly node: TypeNode;
-  /** Full C# name of the class whose field list `field` comes from; `null` in a dictionary. */
-  readonly owner: string | null;
 }
 
 /**
@@ -943,7 +942,7 @@ interface Slot {
  * inside a dictionary, where the next key is an entry's key.
  */
 type Scope =
-  | { readonly fields: readonly FieldMetadata[]; readonly owner: string | null }
+  | { readonly fields: readonly FieldMetadata[] }
   | { readonly dictionary: TypeNode };
 
 /** The slot `ref`'s last key names, or `null` when the chain does not resolve. */
@@ -960,7 +959,7 @@ function slotAt(ref: FieldRef, schema: SchemaRoot): Slot | null {
 function keySlotAt(ref: FieldRef, schema: SchemaRoot): Slot | null {
   const scope = scopeAt(ref, schema);
   const key = scope && 'dictionary' in scope ? scope.dictionary.key : undefined;
-  return key ? { field: null, node: key, owner: null } : null;
+  return key ? { field: null, node: key } : null;
 }
 
 /**
@@ -985,7 +984,7 @@ function scopeAt(ref: FieldRef, schema: SchemaRoot): Scope | null {
   const root = rootFieldsFor(ref, schema);
   if (!root) return null;
 
-  let scope: Scope = root;
+  let scope: Scope = { fields: root };
   for (let step = 0; step < ref.fieldPath.length - 1; step++) {
     const slot = slotIn(scope, ref.fieldPath[step]);
     if (!slot) return null;
@@ -999,10 +998,10 @@ function scopeAt(ref: FieldRef, schema: SchemaRoot): Scope | null {
 function slotIn(scope: Scope, key: string): Slot | null {
   if ('dictionary' in scope) {
     const value = scope.dictionary.value;
-    return value ? { field: null, node: value, owner: null } : null;
+    return value ? { field: null, node: value } : null;
   }
   const field = scope.fields.find((candidate) => candidate.tag === key);
-  return field ? { field, node: nodeOf(field), owner: scope.owner } : null;
+  return field ? { field, node: nodeOf(field) } : null;
 }
 
 /**
@@ -1014,7 +1013,7 @@ function scopeUnder(node: TypeNode, tag: string | null, schema: SchemaRoot): Sco
   const item = itemOf(node);
   if (item.kind === DICTIONARY_KIND) return { dictionary: item };
   const definition = definitionOf(item, tag, schema);
-  return definition ? { fields: definition.fields, owner: definition.className } : null;
+  return definition ? { fields: definition.fields } : null;
 }
 
 /**
@@ -1023,14 +1022,14 @@ function scopeUnder(node: TypeNode, tag: string | null, schema: SchemaRoot): Sco
  * the prototype's fields keyed by its `type:`. `null` when the schema does not
  * know that component / prototype type.
  */
-function rootFieldsFor(ref: FieldRef, schema: SchemaRoot): Scope | null {
-  const root =
-    ref.component !== null
-      ? schema.components[ref.component]
-      : ref.prototypeType !== null
-        ? schema.prototypes[ref.prototypeType]
-        : undefined;
-  return root ? { fields: root.fields, owner: root.className } : null;
+function rootFieldsFor(ref: FieldRef, schema: SchemaRoot): readonly FieldMetadata[] | null {
+  if (ref.component !== null) {
+    return schema.components[ref.component]?.fields ?? null;
+  }
+  if (ref.prototypeType !== null) {
+    return schema.prototypes[ref.prototypeType]?.fields ?? null;
+  }
+  return null;
 }
 
 /**

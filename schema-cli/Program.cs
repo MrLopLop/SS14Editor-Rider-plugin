@@ -30,7 +30,7 @@ namespace Content.Editor;
 public static class Program
 {
     /// <summary>Bumped whenever the emitted document's shape changes.</summary>
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
 
     /// <summary>
     /// Sub-directories of <c>&lt;forkRoot&gt;/bin</c> the schema is built from —
@@ -189,7 +189,7 @@ public static class Program
 
     /// <summary>
     /// SHA256 over <c>name|size|mtime</c> of every input DLL plus this CLI's
-    /// own version. Uses file metadata rather than content hashes: MSBuild
+    /// own version and <see cref="SchemaVersion"/>. Uses file metadata rather than content hashes: MSBuild
     /// rewrites an output DLL on every rebuild, so size or last-write-time is
     /// enough to detect a change and is orders of magnitude cheaper for a
     /// fork with ~1000 DLLs. File name (not full path) keeps the value stable
@@ -208,6 +208,9 @@ public static class Program
 
         var version = typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
         sb.Append("cliVersion|").Append(version);
+        // The document shape too: a CLI whose output changed shape without a
+        // version bump must not be served a stale cache.
+        sb.Append("\nschemaVersion|").Append(SchemaVersion);
 
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(sb.ToString()));
         return Convert.ToHexString(hash).ToLowerInvariant();

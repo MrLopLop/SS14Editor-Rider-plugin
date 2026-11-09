@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ForkFolderStatus } from '../../src/core/fork-detection';
+import { localeIndexBuilding, localeIndexFailed, localeIndexReady } from '../../src/core/localization-index';
 import { indexBuilding, indexFailed, indexReady } from '../../src/core/prototype-index';
 import { interpretSchemaResult, type SchemaStatus } from '../../src/core/schema';
-import { forkStatusLog, indexStatusLog, schemaStatusLog } from '../../src/core/status-log';
+import { forkStatusLog, indexStatusLog, localeIndexStatusLog, schemaStatusLog } from '../../src/core/status-log';
 
 const recognized: ForkFolderStatus = { name: 'crystall-edge', status: { recognized: true } };
 
@@ -126,5 +127,21 @@ describe('indexStatusLog', () => {
 
   it('stays silent when the index is torn down', () => {
     expect(indexStatusLog(indexReady(25200, 0), null)).toEqual([]);
+  });
+});
+
+describe('localeIndexStatusLog', () => {
+  it('logs the start of a build and a failure', () => {
+    expect(localeIndexStatusLog(undefined, localeIndexBuilding())).toEqual(['[locale] Indexing localization…']);
+    expect(localeIndexStatusLog(localeIndexBuilding(), localeIndexFailed('the worker exited (code 1)'))).toEqual([
+      '[locale] Localization index failed: the worker exited (code 1)',
+    ]);
+  });
+
+  it('leaves a ready index to the controller, and stays silent on teardown', () => {
+    const ready = localeIndexReady(33682, 2390, ['en-US', 'ru-RU']);
+    expect(ready.message).toBe('Localization index: 33682 keys in 2390 files (en-US, ru-RU).');
+    expect(localeIndexStatusLog(localeIndexBuilding(), ready)).toEqual([]);
+    expect(localeIndexStatusLog(ready, null)).toEqual([]);
   });
 });

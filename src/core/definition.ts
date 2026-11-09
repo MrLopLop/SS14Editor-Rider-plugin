@@ -1,19 +1,27 @@
 /**
- * Go-to-definition for prototype ids (spec #20, "Текстовые провайдеры";
- * issue #33). Pure core: text + offset + schema snapshot + prototype index in,
- * the declaration to jump to as data out. The host adapter
- * ({@link file://../host/text-providers.ts}) turns it into a `LocationLink`;
- * VS Code then serves it on both Ctrl+Click and F12.
+ * Go-to-definition (spec #20, "Текстовые провайдеры"). Pure core: text +
+ * offset + schema snapshot (+ prototype index) in, what to jump to as data out.
+ * The host adapter ({@link file://../host/text-providers.ts}) turns it into
+ * `LocationLink`s; VS Code then serves them on both Ctrl+Click and F12. Three
+ * questions, asked in this order:
  *
- * The caret must sit on the value of a field that names a prototype — the same
- * question autocomplete asks ({@link protoRefKindAt}): `parent:` (scalar, block
- * list or flow list), `ProtoId<T>`, `EntProtoId`, and lists of them — or on a
- * key of a dictionary keyed by one (`damage.types: { Blunt: 5 }`). The id is
- * looked up under that field's kind only, so an entity id written in a reagent
- * field has no target.
+ *   - {@link definitionAt} — a prototype id (issue #33) to its YAML
+ *     declaration. The caret must sit on the value of a field that names a
+ *     prototype — the same question autocomplete asks ({@link protoRefKindAt}):
+ *     `parent:` (scalar, block list or flow list), `ProtoId<T>`, `EntProtoId`,
+ *     and lists of them — or on a key of a dictionary keyed by one
+ *     (`damage.types: { Blunt: 5 }`). The id is looked up under that field's
+ *     kind only, so an entity id written in a reagent field has no target.
+ *   - {@link classDefinitionAt} — a component name, a `!type:` tag or a
+ *     prototype's own `type:` (issue #31) to the C# class it names.
+ *   - {@link fieldDefinitionAt} — a field key to the C# member behind it, in
+ *     the class that declares it.
+ *
+ * Where a C# class or member is written is the `ClassLocator`'s question
+ * (./class-location.ts), asked by the host.
  */
 
-import { contextAt, fieldOwnerAt, protoRefKindAt, typeTagMemberAt } from './completion';
+import { contextAt, fieldAt, protoRefKindAt, typeTagMemberAt } from './completion';
 import type { PrototypeIndexView, PrototypeRecord } from './prototype-index';
 import { parsePrototypeFile, type CursorContext, type PrototypeFile } from './prototype-yaml';
 import type { SchemaRoot } from './schema-contract';
@@ -54,50 +62,29 @@ export function definitionAt(
 
 /** A C# class to jump to, and which text it was asked from. */
 export interface ClassDefinition {
-  /** `[start, end)` of the name under the caret — a component name, or a tag's member name. */
+  /** `[start, end)` of the name under the caret — a component name, a tag's member name, or a prototype type. */
   readonly origin: readonly [number, number];
   /** The class's full C# name, from the schema — for `ClassLocator.locate`. */
   readonly className: string;
-  /** What names it: a component's `type:` value, or a `!type:` tag. */
-  readonly kind: 'component' | 'type';
-  /** The name as written — a component's registration name, a tag's member name. */
+  /** What names it: a component's `type:` value, a `!type:` tag, or a prototype's own `type:` value. */
+  readonly kind: 'component' | 'type' | 'prototype';
+  /** The name as written — a component's registration name, a tag's member name, a prototype type. */
   readonly name: string;
+  /** The class's XML-doc summary as the schema carries it — for hover. */
+  readonly summary?: string;
 }
 
 /**
  * The C# class named under the caret (issue #31): a component — the value of a
- * component-registry entry's `type:` — or the union member a `!type:` tag picks.
- * `null` off both, or for a name the schema does not know there. Where that
+ * component-registry entry's `type:` — the union member a `!type:` tag picks,
+ * or the `[Prototype]` class a prototype's own top-level `type:` names.
+ * `null` off all three, or for a name the schema does not know there. Where that
  * class is declared is the `ClassLocator`'s question (./class-location.ts),
  * asked by the host.
  */
 export function classDefinitionAt(text: string, offset: number, schema: SchemaRoot): ClassDefinition | null {
   const file = parsePrototypeFile(text);
   return file.ok ? classAt(file, contextAt(file, offset, schema), offset, schema) : null;
-}
-
-/** A C# field or property to jump to, and which key it was asked from. */
-export interface FieldDefinition {
-  /** `[start, end)` of the key under the caret. */
-  readonly origin: readonly [number, number];
-  /** Full C# name of the class the field was found on — it may be declared on a base. */
-  readonly owner: string;
-  /** The C# member behind the key — for `ClassLocator.locateMember`. */
-  readonly member: string;
-}
-
-/**
- * The C# field a key names — of a component, a `[DataDefinition]` (through any
- * `!type:` on the way) or the prototype itself. `null` off a key, and for a key
- * the schema has no field by. Where that field is declared is the
- * `ClassLocator`'s question, asked by the host.
- */
-export function fieldDefinitionAt(text: string, offset: number, schema: SchemaRoot): FieldDefinition | null {
-  const file = parsePrototypeFile(text);
-  if (!file.ok) return null;
-  const owned = fieldOwnerAt(contextAt(file, offset, schema), schema);
-  const origin = owned?.owner ? idSpanAt(file.text, offset) : null;
-  return owned?.owner && origin ? { origin, owner: owned.owner, member: owned.field.name } : null;
 }
 
 /**
@@ -117,15 +104,75 @@ export function classAt(
     if (!member || token.text === null) return null;
     // The name ends the tag: `!type:<name>`.
     const end = token.range[1];
-    return { origin: [end - token.text.length, end], className: member, kind: 'type', name: token.text };
+    return {
+      origin: [end - token.text.length, end],
+      className: member,
+      kind: 'type',
+      name: token.text,
+      summary: own(schema.dataDefinitions, member)?.summary,
+    };
+  }
+
+  if (isPrototypeTypeValue(ctx)) {
+    const origin = idSpanAt(file.text, offset);
+    const type = ctx.prototypeType;
+    if (!origin || type === null || file.text.slice(origin[0], origin[1]) !== type) return null;
+    const prototype = own(schema.prototypes, type);
+    return prototype
+      ? { origin, className: prototype.className, kind: 'prototype', name: type, summary: prototype.summary }
+      : null;
   }
 
   if (token.kind !== 'component-type' || token.text === null) return null;
-  const component = Object.hasOwn(schema.components, token.text) ? schema.components[token.text] : undefined;
+  const component = own(schema.components, token.text);
   if (!component) return null;
 
   const origin = idSpanAt(file.text, offset);
-  return origin ? { origin, className: component.className, kind: 'component', name: token.text } : null;
+  return origin
+    ? { origin, className: component.className, kind: 'component', name: token.text, summary: component.summary }
+    : null;
+}
+
+/** `record[key]` when `key` is the record's own — a name like `constructor` is not a schema entry. */
+function own<T>(record: Readonly<Record<string, T>>, key: string): T | undefined {
+  return Object.hasOwn(record, key) ? record[key] : undefined;
+}
+
+/** On the value of a prototype map's own `type:` — outside every component. */
+function isPrototypeTypeValue(ctx: CursorContext): boolean {
+  return (
+    ctx.token.kind === 'value' &&
+    ctx.component === null &&
+    ctx.fieldPath.length === 1 &&
+    ctx.fieldPath[0] === 'type'
+  );
+}
+
+/** A C# member to jump to, and which text it was asked from. */
+export interface FieldDefinition {
+  /** `[start, end)` of the field key under the caret. */
+  readonly origin: readonly [number, number];
+  /** Full C# name of the class declaring the member — for `ClassLocator.locateMember`. */
+  readonly className: string;
+  /** The member's C# name. */
+  readonly member: string;
+}
+
+/**
+ * The C# member behind the field key under the caret — of a prototype, a
+ * component, or a `[DataDefinition]` (through any `!type:` on the way); the
+ * keys hover documents. The class is the one that declares the member, which
+ * for an inherited field is a base class. `null` off a field key, or when the
+ * schema does not name the declaring class (a document before schema v2).
+ */
+export function fieldDefinitionAt(text: string, offset: number, schema: SchemaRoot): FieldDefinition | null {
+  const file = parsePrototypeFile(text);
+  if (!file.ok) return null;
+
+  const field = fieldAt(contextAt(file, offset, schema), schema);
+  if (!field?.declaringType) return null;
+  const origin = idSpanAt(file.text, offset);
+  return origin ? { origin, className: field.declaringType, member: field.name } : null;
 }
 
 /**

@@ -19,7 +19,7 @@
  * value the loaded document is treated as incompatible and no providers come up
  * (issue #25 acceptance criterion).
  */
-export const EXPECTED_SCHEMA_VERSION = 1;
+export const EXPECTED_SCHEMA_VERSION = 2;
 
 /** One named enum member value (see {@link SchemaRoot.enumConstants}). */
 export interface EnumConstantEntry {
@@ -50,6 +50,12 @@ export interface FieldTypeNode {
 export interface FieldMetadata {
   readonly name: string;
   readonly tag: string;
+  /**
+   * Full C# name of the class declaring the member — a base class for an
+   * inherited field; generic arity kept, no type arguments (`NS.Base`1`,
+   * nested `NS.Outer+Inner`). Absent in documents written before schema v2.
+   */
+  readonly declaringType?: string;
   readonly type: string;
   readonly fullType: string;
   readonly fieldKind: string;

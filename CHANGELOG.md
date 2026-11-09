@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.1
+
+- Go to definition from field names to the C# field or property, including
+  inherited fields, and from a prototype's `type:` to its C# class.
+- Hover over a prototype's `type:` shows its C# class.
+- Go to definition finds `struct` and `record` types too.
+- The schema format changed (version 2): it is rebuilt automatically on the
+  first start.
+- LocId fields show their translation instead of the key, the way Android
+  Studio folds string resources; put the caret on one to see the key. The
+  locale is set by `ss14editor.localization.displayLocale` (default `en-US`);
+  **SS14: Toggle LocId folding** turns it off and on, and
+  **SS14: Rebuild localization index** re-reads all `.ftl` files.
+- Go to definition on a LocId jumps to its `.ftl` declaration, or lists one
+  per locale; hover shows the text in every locale.
+
 ## 1.0.0
 
 First release.

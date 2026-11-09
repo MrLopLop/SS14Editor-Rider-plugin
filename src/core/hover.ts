@@ -10,15 +10,16 @@
  *
  *   - a component name after `- type:` — its class and summary;
  *   - a `!type:` tag — the union member it picks, and that class's summary;
+ *   - a prototype's own `type:` value — its `[Prototype]` class and summary;
  *   - a field key — of a component, a `[DataDefinition]` (through any `!type:`
  *     on the way) or the prototype itself: its summary, type and default.
  *
- * Anything else — a value, a dictionary entry's key, a name the schema does not
+ * Anything else — another value, a dictionary entry's key, a name the schema does not
  * know — has no hover.
  */
 
 import type { ClassLocator } from './class-location';
-import { contextAt, fieldOwnerAt } from './completion';
+import { contextAt, fieldAt } from './completion';
 import { classAt, idSpanAt } from './definition';
 import { parsePrototypeFile } from './prototype-yaml';
 import type { FieldMetadata, SchemaRoot } from './schema-contract';
@@ -26,12 +27,12 @@ import type { FieldMetadata, SchemaRoot } from './schema-contract';
 /** What the caret names, as the hover shows it. */
 export type HoverContent = ClassHover | FieldHover;
 
-/** A component name or a `!type:` tag — the C# class it names. */
+/** A component name, a `!type:` tag or a prototype's `type:` — the C# class it names. */
 export interface ClassHover {
   /** `[start, end)` of the name under the caret — the span the hover belongs to. */
   readonly origin: readonly [number, number];
-  readonly kind: 'component' | 'type';
-  /** As written: a component's registration name, a tag's member name. */
+  readonly kind: 'component' | 'type' | 'prototype';
+  /** As written: a component's registration name, a tag's member name, a prototype type. */
   readonly name: string;
   /** The class's full C# name. */
   readonly type: string;
@@ -54,8 +55,8 @@ export interface FieldHover {
   readonly required: boolean;
   /** The C# member behind the tag — what its declaration is looked up by. */
   readonly member: string;
-  /** Full C# name of the class the field was found on (it may be declared on a base); `null` when unknown. */
-  readonly owner: string | null;
+  /** Full C# name of the class declaring the member; `null` in a schema too old to say. */
+  readonly declaringType: string | null;
 }
 
 /** The hover for `offset` in `text`, or `null` when the caret names nothing the schema documents. */
@@ -66,21 +67,18 @@ export function hoverAt(text: string, offset: number, schema: SchemaRoot): Hover
   const ctx = contextAt(file, offset, schema);
   const named = classAt(file, ctx, offset, schema);
   if (named) {
-    const documented =
-      named.kind === 'component' ? schema.components[named.name] : schema.dataDefinitions[named.className];
     return {
       origin: named.origin,
       kind: named.kind,
       name: named.name,
       type: named.className,
-      summary: summaryOf(documented),
+      summary: summaryOf(named),
     };
   }
 
-  const owned = fieldOwnerAt(ctx, schema);
-  const origin = owned && idSpanAt(file.text, offset);
-  if (!owned || !origin) return null;
-  const { field, owner } = owned;
+  const field = fieldAt(ctx, schema);
+  const origin = field && idSpanAt(file.text, offset);
+  if (!field || !origin) return null;
   return {
     origin,
     kind: 'field',
@@ -90,7 +88,7 @@ export function hoverAt(text: string, offset: number, schema: SchemaRoot): Hover
     default: defaultOf(field),
     required: field.required,
     member: field.name,
-    owner,
+    declaringType: field.declaringType ?? null,
   };
 }
 
@@ -109,11 +107,9 @@ export async function withSourceSummary(
   const lookup: Promise<string | null> =
     hover.kind !== 'field'
       ? locator.classSummary(hover.type)
-      : hover.owner === null
+      : hover.declaringType === null
         ? Promise.resolve(null)
-        : locator
-            .locateMember(hover.owner, hover.member)
-            .then((members) => members.find((member) => member.summary)?.summary ?? null);
+        : locator.memberSummary(hover.declaringType, hover.member);
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<null>((resolve) => (timer = setTimeout(() => resolve(null), timeoutMs)));

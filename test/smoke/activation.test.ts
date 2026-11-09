@@ -58,6 +58,31 @@ suite('activation smoke', () => {
     );
   });
 
+  test('the "SS14: Toggle LocId folding" command and its settings are contributed', async () => {
+    const ext = vscode.extensions.getExtension(QUALIFIED_EXTENSION_ID);
+    const contributes = ext?.packageJSON?.contributes ?? {};
+    const commands = (contributes.commands ?? []) as Array<{ command: string; title: string; category?: string }>;
+    const toggle = commands.find((c) => c.command === 'ss14editor.toggleLocIdFolding');
+    assert.ok(toggle, 'ss14editor.toggleLocIdFolding is not contributed');
+    assert.strictEqual(toggle.category, 'SS14');
+
+    const properties = contributes.configuration?.properties ?? {};
+    assert.strictEqual(properties['ss14editor.localization.displayLocale']?.default, 'en-US');
+    assert.strictEqual(properties['ss14editor.localization.foldKeys']?.default, true);
+
+    await ext?.activate();
+    const registered = await vscode.commands.getCommands(true);
+    assert.ok(registered.includes('ss14editor.toggleLocIdFolding'), 'ss14editor.toggleLocIdFolding is not registered');
+    assert.ok(
+      commands.some((c) => c.command === 'ss14editor.rebuildLocalizationIndex'),
+      'ss14editor.rebuildLocalizationIndex is not contributed',
+    );
+    assert.ok(
+      registered.includes('ss14editor.rebuildLocalizationIndex'),
+      'ss14editor.rebuildLocalizationIndex is not registered',
+    );
+  });
+
   test('no sidebar view or activity-bar container is contributed (issue #45)', () => {
     const ext = vscode.extensions.getExtension(QUALIFIED_EXTENSION_ID);
     const contributes = ext?.packageJSON?.contributes ?? {};

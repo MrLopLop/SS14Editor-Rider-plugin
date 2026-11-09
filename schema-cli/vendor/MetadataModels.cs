@@ -71,6 +71,14 @@ public sealed class FieldMetadata
 {
     public string Name { get; set; } = "";
     public string Tag { get; set; } = "";
+
+    // Full name of the class that declares the member (a base class for an
+    // inherited field), generic arity kept but no type arguments
+    // (`NS.Base`1`, nested `NS.Outer+Inner`). Lets the editor jump to the
+    // member's source even when it lives up the inheritance chain.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DeclaringType { get; set; }
+
     public string Type { get; set; } = "";
     public string FullType { get; set; } = "";
     public string FieldKind { get; set; } = "text";

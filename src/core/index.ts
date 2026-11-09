@@ -21,7 +21,7 @@ export type {
   StaleBuild,
   ForkProblemCode,
 } from './fork-detection';
-export { forkStatusLog, schemaStatusLog, indexStatusLog } from './status-log';
+export { forkStatusLog, schemaStatusLog, indexStatusLog, localeIndexStatusLog } from './status-log';
 
 export {
   EXPECTED_SCHEMA_VERSION,
@@ -77,13 +77,14 @@ export { classDefinitionAt, definitionAt, fieldDefinitionAt } from './definition
 export type { ClassDefinition, DefinitionTarget, FieldDefinition } from './definition';
 export { hoverAt, hoverMarkdown, readableTypeName, withSourceSummary } from './hover';
 export type { ClassHover, FieldHover, HoverContent } from './hover';
-export { ClassLocator, baseClassOf, classDeclarationsIn, docSummaryBefore, memberOffsetIn } from './class-location';
-export type { ClassDeclaration, ClassLocation, CsSourceTree, MemberLocation } from './class-location';
+export { ClassLocator, classDeclarationsIn, docSummaryBefore, memberDeclarationIn } from './class-location';
+export type { ClassDeclaration, ClassLocation, CsSourceTree } from './class-location';
 
 export {
   parsePrototypeFile,
   positionAt,
   scalarSites,
+  valueScalarsOf,
   resolveField,
   cursorContextAt,
   replaceScalarValue,
@@ -106,7 +107,25 @@ export type {
   CursorContext,
   CursorContextOptions,
   CursorToken,
+  ScalarSpan,
   RegistrySite,
   SurgicalEdit,
   EditOutcome,
 } from './prototype-yaml';
+
+export { parseFluent, flattenPattern } from './fluent';
+export type { FluentEntry, FluentPosition, FluentResolver } from './fluent';
+export {
+  LOCALE_ROOTS,
+  FALLBACK_LOCALE,
+  LocalizationIndex,
+  localeOf,
+  collectLocRecords,
+  declarationSpan,
+  localeIndexBuilding,
+  localeIndexReady,
+  localeIndexFailed,
+} from './localization-index';
+export type { LocRecord, LocTranslation, LocalizationIndexView, LocaleIndexStatus } from './localization-index';
+export { locIdAt, locIdSpansIn, locHoverMarkdown, foldedText } from './loc-id';
+export type { LocIdSpan } from './loc-id';
