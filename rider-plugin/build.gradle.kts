@@ -106,7 +106,11 @@ val buildServer by tasks.registering(Exec::class) {
     commandLine(if (Os.isFamily(Os.FAMILY_WINDOWS)) "npm.cmd" else "npm", "run", "build")
     inputs.dir(repoRoot.resolve("src"))
     inputs.files(repoRoot.resolve("package.json"), repoRoot.resolve("package-lock.json"), repoRoot.resolve("esbuild.mjs"))
-    outputs.files(serverDist.resolve("server.js"), serverDist.resolve("prototype-index-worker.js"))
+    outputs.files(
+        serverDist.resolve("server.js"),
+        serverDist.resolve("prototype-index-worker.js"),
+        serverDist.resolve("localization-index-worker.js"),
+    )
 }
 
 /** The schema-extractor CLI, framework-dependent like the VS Code extension's copy. */
@@ -126,7 +130,7 @@ tasks.runIde {
 tasks.prepareSandbox {
     dependsOn(buildServer, buildSchemaCli)
     from(serverDist) {
-        include("server.js", "prototype-index-worker.js")
+        include("server.js", "prototype-index-worker.js", "localization-index-worker.js")
         into(intellijPlatform.projectName.map { "$it/server/dist" })
     }
     from(schemaCli) {

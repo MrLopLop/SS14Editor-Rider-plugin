@@ -7,7 +7,9 @@ import com.intellij.platform.lsp.api.LspServer
 import com.intellij.platform.lsp.api.LspServerManager
 import com.intellij.platform.lsp.api.LspServerState
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiManager
+import com.intellij.psi.impl.FakePsiElement
 import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
@@ -19,7 +21,7 @@ private const val DEFINITION_TIMEOUT_MS = 1000
 /**
  * Go-to-definition in prototype files through the platform's own handler rather
  * than the LSP client's: the editor asks a `GotoDeclarationHandler` on Ctrl+hover
- * too, so a prototype id, a component name or a `!type:` tag that leads
+ * too, so a LocId, a prototype id, a component name or a `!type:` tag that leads
  * somewhere turns into a link — blue and underlined, as in a `.cs` file — and
  * Ctrl+click / Ctrl+B follow it. The LSP client's own definition support is
  * switched off ([Ss14LspServerDescriptor]) so a jump is not offered twice.
@@ -67,6 +69,17 @@ class Ss14GotoDeclarationHandler : GotoDeclarationHandler {
         if (position.line >= document.lineCount) return psiFile
         val offset = (document.getLineStartOffset(position.line) + position.character)
             .coerceAtMost(document.getLineEndOffset(position.line))
+        // A `.ftl` is plain text to the IDE: its one leaf would jump to the top of the file.
+        if (file.extension == "ftl") return FtlDeclaration(psiFile, offset, position.line)
         return psiFile.findElementAt(offset) ?: psiFile
     }
+}
+
+/** A place in a `.ftl` file; several in a chooser read as `<locale>/…/file.ftl:line`. */
+private class FtlDeclaration(private val file: PsiFile, private val offset: Int, private val line: Int) : FakePsiElement() {
+    override fun getParent(): PsiElement = file
+
+    override fun getTextOffset(): Int = offset
+
+    override fun getName(): String = "${file.virtualFile.path.substringAfter("/Locale/")}:${line + 1}"
 }

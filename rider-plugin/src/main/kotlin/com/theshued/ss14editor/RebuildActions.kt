@@ -55,3 +55,5 @@ abstract class Ss14CommandAction(private val command: String, private val textKe
 class RebuildSchemaAction : Ss14CommandAction("ss14editor.rebuildSchema", "action.rebuildSchema")
 
 class RebuildPrototypeIndexAction : Ss14CommandAction("ss14editor.rebuildPrototypeIndex", "action.rebuildPrototypeIndex")
+
+class RebuildLocalizationIndexAction : Ss14CommandAction("ss14editor.rebuildLocalizationIndex", "action.rebuildLocalizationIndex")

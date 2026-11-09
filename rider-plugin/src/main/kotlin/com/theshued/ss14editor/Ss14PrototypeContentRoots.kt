@@ -13,8 +13,13 @@ import com.intellij.workspaceModel.ide.NonPersistentEntitySource
 
 private val LOG = logger<Ss14PrototypeContentRoots>()
 
-/** The prototype roots the index reads (`PROTOTYPE_ROOTS` in the TS core). */
-private val PROTOTYPE_DIRS = listOf("Resources/Prototypes", "RobustToolbox/Resources/EnginePrototypes")
+/** The roots the indexes read (`PROTOTYPE_ROOTS` and `LOCALE_ROOTS` in the TS core). */
+private val CONTENT_DIRS = listOf(
+    "Resources/Prototypes",
+    "RobustToolbox/Resources/EnginePrototypes",
+    "Resources/Locale",
+    "RobustToolbox/Resources/Locale",
+)
 
 /** Name of the in-memory module holding the prototype folders. */
 private const val MODULE_NAME = "SS14 Prototypes"
@@ -30,7 +35,7 @@ class Ss14PrototypeContentRoots : ProjectActivity {
     override suspend fun execute(project: Project) {
         val root = project.guessProjectDir() ?: return
         if (!isSs14Fork(project)) return
-        val dirs = PROTOTYPE_DIRS.mapNotNull { root.findFileByRelativePath(it) }
+        val dirs = CONTENT_DIRS.mapNotNull { root.findFileByRelativePath(it) }
         if (dirs.isEmpty()) return
 
         val workspaceModel = project.workspaceModel

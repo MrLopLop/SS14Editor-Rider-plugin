@@ -22,6 +22,7 @@ export interface Messages {
   staleBuild(stale: StaleBuild): string;
   schemaProblem(status: Exclude<SchemaStatus, { state: 'loaded' }>): string;
   indexFailed(message: string): string;
+  localeIndexFailed(message: string): string;
   readonly extractingSchema: string;
   readonly indexingPrototypes: string;
   indexProgress(done: number, total: number): string;
@@ -35,6 +36,7 @@ const EN: Messages = {
   staleBuild: (stale) => stale.message,
   schemaProblem: (status) => status.message,
   indexFailed: (message) => message,
+  localeIndexFailed: (message) => message,
   extractingSchema: 'SS14: extracting schema',
   indexingPrototypes: 'SS14: indexing prototypes',
   indexProgress: (done, total) => `${done}/${total} files`,
@@ -90,6 +92,7 @@ const RU: Messages = {
     }
   },
   indexFailed: (message) => message.replace(/^Prototype index failed: /, 'Не удалось построить индекс прототипов: '),
+  localeIndexFailed: (message) => message.replace(/^Localization index failed: /, 'Не удалось построить индекс локализации: '),
   extractingSchema: 'SS14: извлечение схемы',
   indexingPrototypes: 'SS14: индексация прототипов',
   indexProgress: (done, total) => `${done}/${total} файлов`,

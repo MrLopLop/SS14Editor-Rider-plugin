@@ -48,7 +48,7 @@
    `Compatible` без internal API; deprecated допустимы (переименованное LSP API,
    см. ADR-0002). Тот же Plugin Verifier Marketplace запускает при загрузке. В zip должны быть
    `lib/`, `server/dist/server.js`, `server/dist/prototype-index-worker.js`,
-   `server/assets/schema-cli/`.
+   `server/dist/localization-index-worker.js`, `server/assets/schema-cli/`.
 3. Поставить zip в свой Rider (**Settings → Plugins → ⚙ → Install Plugin from
    Disk**), перезапустить, открыть собранный форк и прототип: подсказки, hover,
    переход, подсветка ошибок.

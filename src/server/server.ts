@@ -8,6 +8,7 @@ import {
   createConnection,
   DidChangeWatchedFilesNotification,
   MarkupKind,
+  NotificationType0,
   ProposedFeatures,
   RequestType,
   SemanticTokensBuilder,
@@ -26,10 +27,17 @@ import {
   classDefinitionAt,
   completionsAt,
   componentNameRanges,
+  declarationSpan,
   definitionAt,
+  FALLBACK_LOCALE,
   fieldDefinitionAt,
+  foldedText,
   hoverAt,
   hoverMarkdown,
+  LOCALE_ROOTS,
+  locHoverMarkdown,
+  locIdAt,
+  locIdSpansIn,
   opensSuggestOnNewLine,
   PROTOTYPE_ROOTS,
   reopensSuggestAfterDeletion,
@@ -42,6 +50,7 @@ import { DiagnosticsService } from './diagnostics-service';
 import { ForkState } from './fork-state';
 import { localeOf } from './i18n';
 import { IndexService } from './index-service';
+import { LocalizationService } from './localization-service';
 import { Reporter } from './reporter';
 import { SchemaService } from './schema-service';
 
@@ -64,6 +73,8 @@ interface InitOptions {
   readonly schemaCliPath?: string;
   /** `en` (default) or `ru`: the language of problems, diagnostics and progress. */
   readonly locale?: string;
+  /** The locale LocId keys fold into and are listed first in; `en-US` when unset. */
+  readonly displayLocale?: string;
 }
 
 /**
@@ -82,11 +93,29 @@ interface ShouldSuggestParams {
 
 const ShouldSuggestRequest = new RequestType<ShouldSuggestParams, boolean, void>('ss14/shouldSuggest');
 
+/** A LocId value to fold into its translation: `[start, end)` of the value as written, offsets into the request's text. */
+interface LocIdFold {
+  readonly start: number;
+  readonly end: number;
+  readonly placeholder: string;
+}
+
+/**
+ * The folds of a prototype document — LSP's `foldingRange` cannot say what a
+ * fold reads as. `text` is the document as the client has it now, so the
+ * offsets never wait on `didChange` reaching us.
+ */
+const LocIdFoldsRequest = new RequestType<{ readonly uri: string; readonly text: string }, LocIdFold[], void>('ss14/locIdFolds');
+
+/** The answers to {@link LocIdFoldsRequest} may have changed: ask again. */
+const LocIdsChangedNotification = new NotificationType0('ss14/locIdsChanged');
+
 /** The one semantic token type: a component name in a component registry. */
 const COMPONENT_TOKEN = 'ss14Component';
 
 const REBUILD_SCHEMA_COMMAND = 'ss14editor.rebuildSchema';
 const REBUILD_PROTOTYPE_INDEX_COMMAND = 'ss14editor.rebuildPrototypeIndex';
+const REBUILD_LOCALIZATION_INDEX_COMMAND = 'ss14editor.rebuildLocalizationIndex';
 
 /** The built DLLs fork detection and the schema read — the VS Code host watches the same. */
 const DLL_GLOB = '**/bin/Content.{Server,Client}/*.dll';
@@ -100,6 +129,7 @@ let options: InitOptions = {};
 let fork: ForkState | undefined;
 let schema: SchemaService | undefined;
 let prototypes: IndexService | undefined;
+let localization: LocalizationService | undefined;
 let resources: ResourceTree | undefined;
 /** Created on the first component jump; dropped on every schema change, when classes may have moved. */
 let classLocator: ClassLocator | undefined;
@@ -131,7 +161,9 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
       definitionProvider: true,
       // Component names, for a client to colour on its own (Rider: a configurable colour).
       semanticTokensProvider: { legend: { tokenTypes: [COMPONENT_TOKEN], tokenModifiers: [] }, full: true },
-      executeCommandProvider: { commands: [REBUILD_SCHEMA_COMMAND, REBUILD_PROTOTYPE_INDEX_COMMAND] },
+      executeCommandProvider: {
+        commands: [REBUILD_SCHEMA_COMMAND, REBUILD_PROTOTYPE_INDEX_COMMAND, REBUILD_LOCALIZATION_INDEX_COMMAND],
+      },
     },
     serverInfo: { name: 'SS14 Prototype Editor' },
   };
@@ -139,7 +171,11 @@ connection.onInitialize((params: InitializeParams): InitializeResult => {
 
 connection.onInitialized(() => {
   void connection.client.register(DidChangeWatchedFilesNotification.type, {
-    watchers: [{ globPattern: DLL_GLOB }, ...PROTOTYPE_ROOTS.map((root) => ({ globPattern: `**/${root.dir}/**` }))],
+    watchers: [
+      { globPattern: DLL_GLOB },
+      ...PROTOTYPE_ROOTS.map((root) => ({ globPattern: `**/${root.dir}/**` })),
+      ...LOCALE_ROOTS.map((root) => ({ globPattern: `**/${root}/**` })),
+    ],
   });
 
   const storagePath = options.storagePath ?? path.join(os.tmpdir(), 'ss14editor');
@@ -149,8 +185,12 @@ connection.onInitialized(() => {
   fork = new ForkState(rootPath, reporter);
   schema = new SchemaService(fork, storagePath, cliPath, reporter);
   prototypes = new IndexService(fork, storagePath, reporter);
+  localization = new LocalizationService(fork, reporter, () => documents.all());
+  const locIdsChanged = () => void connection.sendNotification(LocIdsChangedNotification);
+  localization.onDidUpdate(locIdsChanged);
   schema.onDidChange(() => {
     classLocator = undefined;
+    locIdsChanged();
     // Which sequences are component registries is the schema's to say.
     if (semanticTokensRefresh) void connection.languages.semanticTokens.refresh();
     recheckOpenDocuments();
@@ -168,11 +208,18 @@ connection.onInitialized(() => {
 });
 
 documents.onDidOpen(({ document }) => diagnostics.schedule(document.uri));
-documents.onDidChangeContent(({ document }) => diagnostics.schedule(document.uri));
-documents.onDidClose(({ document }) => diagnostics.close(document.uri));
+documents.onDidChangeContent(({ document }) => {
+  diagnostics.schedule(document.uri);
+  localization?.documentEdited(document);
+});
+documents.onDidClose(({ document }) => {
+  diagnostics.close(document.uri);
+  localization?.documentClosed(document);
+});
 
 connection.onShutdown(() => {
   diagnostics.dispose();
+  localization?.dispose();
   prototypes?.dispose();
   schema?.dispose();
   fork?.dispose();
@@ -184,13 +231,17 @@ connection.onDidChangeWatchedFiles(({ changes }) => {
     fork?.scheduleRefresh();
     schema?.scheduleRun();
   }
-  const prototypePaths = paths.filter((p) => !p.toLowerCase().endsWith('.dll'));
+  const others = paths.filter((p) => !p.toLowerCase().endsWith('.dll'));
+  const localePaths = others.filter((p) => localization?.owns(p));
+  if (localePaths.length > 0) localization?.queueUpdate(localePaths);
+  const prototypePaths = others.filter((p) => !localization?.owns(p));
   if (prototypePaths.length > 0) prototypes?.queueUpdate(prototypePaths);
 });
 
 connection.onExecuteCommand(async ({ command }) => {
   if (command === REBUILD_SCHEMA_COMMAND) await schema?.run();
   else if (command === REBUILD_PROTOTYPE_INDEX_COMMAND) prototypes?.rebuild();
+  else if (command === REBUILD_LOCALIZATION_INDEX_COMMAND) localization?.rebuild();
 });
 
 /**
@@ -202,11 +253,32 @@ function contextFor(uri: string) {
   const document = documents.get(uri);
   const root = fork?.recognizedRoot();
   const loaded = schema?.schema;
-  if (!document || !root || !loaded || !prototypes || !uri.startsWith('file:')) return undefined;
-  const relative = path.relative(root.path, fileURLToPath(uri)).split(path.sep).join('/');
-  if (!/^Resources\/Prototypes\/.+\.ya?ml$/i.test(relative)) return undefined;
+  if (!document || !root || !loaded || !prototypes || !isPrototypeUri(uri, root.path)) return undefined;
   return { document, root, schema: loaded, index: prototypes.index };
 }
+
+function isPrototypeUri(uri: string, forkRoot: string): boolean {
+  if (!uri.startsWith('file:')) return false;
+  const relative = path.relative(forkRoot, fileURLToPath(uri)).split(path.sep).join('/');
+  return /^Resources\/Prototypes\/.+\.ya?ml$/i.test(relative);
+}
+
+function displayLocale(): string {
+  return options.displayLocale?.trim() || FALLBACK_LOCALE;
+}
+
+/** Keys no locale declares stay as written; so does everything until the schema and the index are ready. */
+connection.onRequest(LocIdFoldsRequest, ({ uri, text }) => {
+  const root = fork?.recognizedRoot();
+  const loaded = schema?.schema;
+  const index = localization?.index;
+  if (!root || !loaded || !index?.ready || !isPrototypeUri(uri, root.path)) return [];
+  const locale = displayLocale();
+  return locIdSpansIn(text, loaded, (key) => index.has(key)).flatMap((span) => {
+    const preview = index.preview(span.key, locale);
+    return preview === null ? [] : [{ start: span.outer[0], end: span.outer[1], placeholder: foldedText(preview) }];
+  });
+});
 
 /** The VS Code host's `triggerSuggestOnEdit` and `ss14editor.suggestIfAny`, as one request. */
 connection.onRequest(ShouldSuggestRequest, ({ uri, text, offset, reason }) => {
@@ -253,7 +325,20 @@ connection.onHover(async ({ textDocument, position }) => {
   const context = contextFor(textDocument.uri);
   if (!context) return null;
   const { document } = context;
-  const found = hoverAt(document.getText(), document.offsetAt(position), context.schema);
+  const text = document.getText();
+  const offset = document.offsetAt(position);
+
+  // A LocId: its text in every locale and where each declares it.
+  const locId = localization?.index.ready ? locIdAt(text, offset, context.schema) : null;
+  if (locId && localization) {
+    const translations = localization.index.translations(locId.key, displayLocale());
+    return {
+      contents: { kind: MarkupKind.Markdown, value: locHoverMarkdown(locId.key, translations) },
+      range: rangeIn(document, locId.outer),
+    };
+  }
+
+  const found = hoverAt(text, offset, context.schema);
   if (!found) return null;
   const hover = await withSourceSummary(found, locatorFor(context.root.path), SOURCE_SUMMARY_TIMEOUT_MS);
   return {
@@ -268,7 +353,7 @@ function locatorFor(forkRoot: string): ClassLocator {
 }
 
 /**
- * A prototype id jumps to its declaration (engine prototypes resolve the same
+ * A LocId jumps to its `.ftl` declarations; a prototype id to its declaration (engine prototypes resolve the same
  * way, into `RobustToolbox/Resources/EnginePrototypes/`); a component name or a
  * `!type:` tag or a prototype's `type:` to its C# class — one link per part of a
  * partial class; a field key to its C# member, in the class that declares it.
@@ -279,6 +364,22 @@ connection.onDefinition(async ({ textDocument, position }): Promise<LocationLink
   const { document, root } = context;
   const text = document.getText();
   const offset = document.offsetAt(position);
+
+  // A LocId jumps to its `.ftl` declarations — one per locale.
+  const locId = localization?.index.ready ? locIdAt(text, offset, context.schema) : null;
+  if (locId && localization) {
+    const links = localization.index.declarations(locId.key, displayLocale()).map((record): LocationLink => {
+      const { line, column, length } = declarationSpan(record, locId.key);
+      const target: Range = { start: { line, character: column }, end: { line, character: column + length } };
+      return {
+        originSelectionRange: rangeIn(document, locId.range),
+        targetUri: pathToFileURL(path.join(root.path, ...record.filePath.split('/'))).toString(),
+        targetRange: target,
+        targetSelectionRange: target,
+      };
+    });
+    return links.length > 0 ? links : null;
+  }
 
   const found = definitionAt(text, offset, context.schema, context.index);
   if (found) {

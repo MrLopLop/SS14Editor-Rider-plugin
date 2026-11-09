@@ -4,6 +4,8 @@ import com.intellij.codeInsight.editorActions.BackspaceHandlerDelegate
 import com.intellij.codeInsight.editorActions.enter.EnterHandlerDelegate
 import com.intellij.codeInsight.navigation.actions.GotoDeclarationHandler
 import com.intellij.ide.plugins.PluginManagerCore
+import com.intellij.lang.Language
+import com.intellij.lang.folding.LanguageFolding
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors
 import com.intellij.openapi.extensions.PluginId
@@ -64,6 +66,14 @@ class Ss14PluginTest {
         val actions = ActionManager.getInstance()
         assertTrue(actions.getAction("Ss14Editor.RebuildSchema") is RebuildSchemaAction)
         assertTrue(actions.getAction("Ss14Editor.RebuildPrototypeIndex") is RebuildPrototypeIndexAction)
+        assertTrue(actions.getAction("Ss14Editor.RebuildLocalizationIndex") is RebuildLocalizationIndexAction)
+        assertTrue(actions.getAction("Ss14Editor.ToggleLocIdFolding") is ToggleLocIdFoldingAction)
+    }
+
+    @Test
+    fun locIdFoldsAreBuiltForYaml() {
+        val yaml = Language.findLanguageByID("yaml")!!
+        assertTrue(LanguageFolding.INSTANCE.allForLanguage(yaml).any { it is Ss14LocIdFoldingBuilder })
     }
 }
 
@@ -80,5 +90,13 @@ class PrototypePathTest {
         assertFalse(isPrototypePath("D:/fork/Resources/Prototypes/readme.txt"))
         assertFalse(isPrototypePath("D:/fork/Resources/Maps/station.yml"))
         assertFalse(isPrototypePath("D:/fork/Content.Server/Prototypes.yml"))
+    }
+
+    @Test
+    fun onlyFtlUnderResourcesLocaleIsALocaleFile() {
+        assertTrue(isLocalePath("D:/fork/Resources/Locale/ru-RU/items.ftl"))
+        assertTrue(isLocalePath("D:/fork/RobustToolbox/Resources/Locale/en-US/engine.ftl"))
+        assertFalse(isLocalePath("D:/fork/Resources/Locale/ru-RU/readme.txt"))
+        assertFalse(isLocalePath("D:/fork/Resources/Prototypes/items.ftl"))
     }
 }

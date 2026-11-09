@@ -45,10 +45,13 @@ enum class SuggestReason(val wire: String) {
 /** `ss14/shouldSuggest` params: the document as the editor has it now, so no `didChange` race. */
 data class ShouldSuggestParams(val uri: String, val text: String, val offset: Int, val reason: String)
 
-/** The server's own request on top of LSP. */
+/** The server's own requests on top of LSP. */
 interface Ss14LanguageServer : LanguageServer {
     @JsonRequest("ss14/shouldSuggest")
     fun shouldSuggest(params: ShouldSuggestParams): CompletableFuture<Boolean>
+
+    @JsonRequest("ss14/locIdFolds")
+    fun locIdFolds(params: LocIdFoldsParams): CompletableFuture<List<LocIdFold>>
 }
 
 @Service(Service.Level.PROJECT)

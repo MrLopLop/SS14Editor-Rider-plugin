@@ -8,7 +8,7 @@ import {
 import { messagesFor, type Locale, type Messages } from './i18n';
 
 /** What part of the pipeline a problem belongs to — each keeps its own latest problem. */
-export type ProblemArea = 'fork' | 'schema' | 'index';
+export type ProblemArea = 'fork' | 'schema' | 'index' | 'locale';
 
 /**
  * The server's only ways to reach the user — the LSP counterpart of the VS Code

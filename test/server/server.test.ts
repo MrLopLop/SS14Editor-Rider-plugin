@@ -117,7 +117,7 @@ async function startOnPlainFolder(locale?: string) {
 }
 
 describe('language server', () => {
-  it('announces completion, hover, definition and the two rebuild commands', async () => {
+  it('announces completion, hover, definition and the rebuild commands', async () => {
     const { initialized } = await startOnPlainFolder();
     const result = initialized.result as { capabilities: Record<string, unknown> };
     expect(result.capabilities).toMatchObject({
@@ -126,7 +126,7 @@ describe('language server', () => {
       definitionProvider: true,
       semanticTokensProvider: { legend: { tokenTypes: ['ss14Component'], tokenModifiers: [] }, full: true },
       executeCommandProvider: {
-        commands: ['ss14editor.rebuildSchema', 'ss14editor.rebuildPrototypeIndex'],
+        commands: ['ss14editor.rebuildSchema', 'ss14editor.rebuildPrototypeIndex', 'ss14editor.rebuildLocalizationIndex'],
       },
     });
   });
@@ -161,6 +161,13 @@ describe('language server', () => {
       position: { line: 2, character: 10 },
     });
     expect(completion.result).toEqual([]);
+  });
+
+  it('folds no LocId when there is no fork', async () => {
+    const { client, folder } = await startOnPlainFolder();
+    const uri = pathToFileURL(path.join(folder, 'Resources', 'Prototypes', 'a.yml')).toString();
+    const answer = await client.request('ss14/locIdFolds', { uri, text: '- type: entity\n' });
+    expect(answer.result).toEqual([]);
   });
 
   it('never asks the client to open the list when there is no fork', async () => {

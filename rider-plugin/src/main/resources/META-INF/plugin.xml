@@ -18,7 +18,8 @@
             <li><b>Prototype ids</b> in <code>parent:</code> and in any field that references a prototype, filtered to the right kind.</li>
             <li><b>Resource paths</b> under <code>Resources/</code> in fields that take one.</li>
             <li><b>Hover</b> over a component, a field or a <code>!type:</code> tag for its C# docs, type and default.</li>
-            <li><b>Go to definition</b> from a prototype id to its declaration, from a component or tag to its C# class.</li>
+            <li><b>Go to definition</b> from a prototype id to its declaration, from a component, tag or field to its C# code.</li>
+            <li><b>Localization</b>: a <code>LocId</code> value shows its translations on hover, jumps to its <code>.ftl</code> declarations and folds into its text.</li>
         </ul>
         <p><b>Getting started.</b> Build your fork once (<code>dotnet build</code>), open its solution in Rider and open
         any file under <code>Resources/Prototypes/</code>. The plugin needs the .NET SDK and Node.js 18+; if Node.js is
@@ -45,6 +46,8 @@
         <notificationGroup id="SS14 Editor" displayType="BALLOON"/>
         <gotoDeclarationHandler implementation="com.theshued.ss14editor.Ss14GotoDeclarationHandler"/>
         <colorSettingsPage implementation="com.theshued.ss14editor.Ss14ColorSettingsPage"/>
+        <lang.foldingBuilder language="yaml" implementationClass="com.theshued.ss14editor.Ss14LocIdFoldingBuilder"/>
+        <editorFactoryListener implementation="com.theshued.ss14editor.Ss14LocIdEditorListener"/>
         <applicationConfigurable parentId="tools"
                                  id="com.theshued.ss14editor.settings"
                                  instance="com.theshued.ss14editor.Ss14Configurable"
@@ -63,6 +66,14 @@
                     class="com.theshued.ss14editor.RebuildPrototypeIndexAction"
                     text="SS14: Rebuild Prototype Index"
                     description="Re-read all prototype files, ignoring the cache"/>
+            <action id="Ss14Editor.RebuildLocalizationIndex"
+                    class="com.theshued.ss14editor.RebuildLocalizationIndexAction"
+                    text="SS14: Rebuild Localization Index"
+                    description="Re-read all .ftl files"/>
+            <action id="Ss14Editor.ToggleLocIdFolding"
+                    class="com.theshued.ss14editor.ToggleLocIdFoldingAction"
+                    text="SS14: Toggle LocId Folding"
+                    description="Show LocId keys as written or as their translation"/>
         </group>
     </actions>
 </idea-plugin>

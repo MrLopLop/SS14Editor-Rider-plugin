@@ -66,5 +66,8 @@ describe('messages', () => {
     expect(RU.indexFailed('Prototype index failed: the worker exited (code 1)')).toBe(
       'Не удалось построить индекс прототипов: the worker exited (code 1)',
     );
+    expect(RU.localeIndexFailed('Localization index failed: the worker exited (code 1)')).toBe(
+      'Не удалось построить индекс локализации: the worker exited (code 1)',
+    );
   });
 });

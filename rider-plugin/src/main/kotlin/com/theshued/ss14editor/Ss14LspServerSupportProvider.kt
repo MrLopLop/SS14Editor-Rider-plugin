@@ -6,6 +6,8 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.platform.lsp.api.Lsp4jClient
+import com.intellij.platform.lsp.api.LspServerNotificationsHandler
 import com.intellij.platform.lsp.api.LspServerSupportProvider
 import com.intellij.platform.lsp.api.LspServerDescriptor
 import com.intellij.platform.lsp.api.customization.LspCompletionCustomizer
@@ -24,6 +26,9 @@ internal fun isPrototypeFile(file: VirtualFile): Boolean = isPrototypePath(file.
 /** [isPrototypeFile] on a `/`-separated path, as `VirtualFile.path` spells it. */
 internal fun isPrototypePath(path: String): Boolean =
     (path.endsWith(".yml") || path.endsWith(".yaml")) && path.contains("/Resources/Prototypes/")
+
+/** An `.ftl` under a locale root: not served, but the server reads it as typed. */
+internal fun isLocalePath(path: String): Boolean = path.endsWith(".ftl") && path.contains("/Resources/Locale/")
 
 /**
  * Starts the language server the first time a prototype file is opened. The
@@ -59,10 +64,13 @@ class Ss14LspServerDescriptor(project: Project, root: VirtualFile, private val n
         // `<plugin>/lib/<this>.jar` -> `<plugin>/server`: the plugin managers' lookups are internal API.
         Path.of(PathManager.getJarPathForClass(Ss14LspServerDescriptor::class.java)!!).parent.parent.resolve("server")
 
-    override fun isSupportedFile(file: VirtualFile): Boolean = isPrototypeFile(file)
+    override fun isSupportedFile(file: VirtualFile): Boolean = isPrototypeFile(file) || isLocalePath(file.path)
 
     /** `ss14/shouldSuggest` on top of LSP (stage 3). */
     override val lsp4jServerClass: Class<out LanguageServer> = Ss14LanguageServer::class.java
+
+    /** `ss14/locIdsChanged` on top of LSP. */
+    override fun createLsp4jClient(handler: LspServerNotificationsHandler): Lsp4jClient = Ss14Lsp4jClient(handler, project)
 
     override val lspCustomization: LspCustomization = object : LspCustomization() {
         /** Completion that reopens the list after a candidate that continues. */
@@ -86,5 +94,7 @@ class Ss14LspServerDescriptor(project: Project, root: VirtualFile, private val n
         "schemaCliPath" to serverDir.resolve("assets/schema-cli/SS14Editor.SchemaCli.dll").toString(),
         // Problems, diagnostics and progress in the plugin's language; a change restarts the server.
         "locale" to if (Ss14Settings.getInstance().effectiveLanguage == Ss14Language.RU) "ru" else "en",
+        // Taken at start-up too; a change restarts the server.
+        "displayLocale" to Ss14Settings.getInstance().displayLocale,
     )
 }

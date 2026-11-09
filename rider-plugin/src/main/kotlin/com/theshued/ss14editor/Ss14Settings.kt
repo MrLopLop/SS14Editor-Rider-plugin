@@ -11,6 +11,8 @@ import com.intellij.openapi.project.ProjectManager
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.platform.lsp.api.LspServerManager
 import com.intellij.ui.dsl.builder.bindItem
+import com.intellij.ui.dsl.builder.bindSelected
+import com.intellij.ui.dsl.builder.bindText
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.listCellRenderer.textListCellRenderer
 import org.jetbrains.annotations.PropertyKey
@@ -31,6 +33,8 @@ enum class Ss14Language {
 class Ss14Settings : PersistentStateComponent<Ss14Settings.State> {
     class State {
         var language: Ss14Language = Ss14Language.AUTO
+        var displayLocale: String = DEFAULT_DISPLAY_LOCALE
+        var foldLocIds: Boolean = true
     }
 
     private var state = State()
@@ -47,6 +51,20 @@ class Ss14Settings : PersistentStateComponent<Ss14Settings.State> {
             state.language = value
         }
 
+    /** The `Resources/Locale/` folder LocId keys fold into and are listed first in. */
+    var displayLocale: String
+        get() = state.displayLocale.trim().ifEmpty { DEFAULT_DISPLAY_LOCALE }
+        set(value) {
+            state.displayLocale = value
+        }
+
+    /** Whether LocId keys in prototypes show as their translation. */
+    var foldLocIds: Boolean
+        get() = state.foldLocIds
+        set(value) {
+            state.foldLocIds = value
+        }
+
     /** The language in effect: the chosen one, or — for [Ss14Language.AUTO] — the IDE's when it is one we have. */
     val effectiveLanguage: Ss14Language
         get() = when (language) {
@@ -55,6 +73,8 @@ class Ss14Settings : PersistentStateComponent<Ss14Settings.State> {
         }
 
     companion object {
+        private const val DEFAULT_DISPLAY_LOCALE = "en-US"
+
         fun getInstance(): Ss14Settings = service()
     }
 }
@@ -82,8 +102,9 @@ object Ss14Bundle {
 }
 
 /**
- * Settings | Tools | SS14 Prototype Editor. Changing the language restarts the
- * running language servers, which take it at start-up (`initializationOptions.locale`).
+ * Settings | Tools | SS14 Prototype Editor. Changing the language or the display
+ * locale restarts the running language servers, which take them at start-up
+ * (`initializationOptions`).
  */
 class Ss14Configurable : BoundConfigurable("SS14 Prototype Editor") {
     override fun createPanel(): DialogPanel {
@@ -103,13 +124,25 @@ class Ss14Configurable : BoundConfigurable("SS14 Prototype Editor") {
                 ).bindItem({ settings.language }, { settings.language = it ?: Ss14Language.AUTO })
                     .comment(Ss14Bundle.message("settings.language.comment"))
             }
+            row(Ss14Bundle.message("settings.displayLocale")) {
+                textField().bindText({ settings.displayLocale }, { settings.displayLocale = it })
+                    .comment(Ss14Bundle.message("settings.displayLocale.comment"))
+            }
+            row {
+                checkBox(Ss14Bundle.message("settings.foldLocIds"))
+                    .bindSelected({ settings.foldLocIds }, { settings.foldLocIds = it })
+                    .comment(Ss14Bundle.message("settings.foldLocIds.comment"))
+            }
         }
     }
 
     override fun apply() {
-        val before = Ss14Settings.getInstance().effectiveLanguage
+        val settings = Ss14Settings.getInstance()
+        val before = settings.effectiveLanguage to settings.displayLocale
+        val foldedBefore = settings.foldLocIds
         super.apply()
-        if (Ss14Settings.getInstance().effectiveLanguage == before) return
+        if (settings.foldLocIds != foldedBefore) refreshLocIdFolds()
+        if ((settings.effectiveLanguage to settings.displayLocale) == before) return
         for (project in ProjectManager.getInstance().openProjects) {
             if (project.isDisposed) continue
             LspServerManager.getInstance(project).stopAndRestartIfNeeded(Ss14LspServerSupportProvider::class.java)
